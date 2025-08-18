@@ -1,0 +1,26 @@
+name: "main"
+scale_along_z: 0
+embedded_instances {
+  id: "root"
+  data: "components {\n"
+  "  id: \"main\"\n"
+  "  component: \"/main/main.script\"\n"
+  "}\n"
+  ""
+}
+embedded_instances {
+  id: "player"
+  data: "components {\n"
+  "  id: \"player_controller\"\n"
+  "  component: \"/game/scripts/player_controller.script\"\n"
+  "}\n"
+  ""
+}
+embedded_instances {
+  id: "debug"
+  data: "components {\n"
+  "  id: \"building_test\"\n"
+  "  component: \"/game/scripts/building_test.script\"\n"
+  "}\n"
+  ""
+}

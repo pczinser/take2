@@ -1,0 +1,30 @@
+function init(self)
+    --msg.post(".", "acquire_input_focus")
+    print("Sim Kernel Starter: initializing")
+
+    sim.set_rate(60)
+    sim.pause(false)
+
+    -- Spawn three floors at explicit Z (supports negatives for basements)
+    sim.spawn_floor_at_z(-1, 2, 2, 32, 32) -- basement
+    sim.spawn_floor_at_z( 0, 2, 2, 32, 32) -- ground
+    sim.spawn_floor_at_z( 1, 2, 2, 32, 32) -- first floor
+
+    -- Demo portal: from z=0 (chunk 0,0 tile 0,0) to z=1 (chunk 1,1 tile 31,31)
+    sim.add_portal(0, 0, 0, 0, 0,   1, 1, 1, 31, 31)
+
+    self.next_print = 0
+end
+
+function update(self, dt)
+    -- The native sim ticks before this. Just print stats occasionally.
+    -- if socket.gettime() >= (self.next_print or 0) then
+    --     local s = sim.get_stats()
+    --     pprint(s)
+    --     self.next_print = socket.gettime() + 2.0
+    -- end
+end
+
+function on_input(self, action_id, action)
+    
+end

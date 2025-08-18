@@ -1,0 +1,103 @@
+-- Resource test script - attach to a debug game object
+
+function init(self)
+    msg.post(".", "acquire_input_focus")
+    print("=== RESOURCE TEST SCRIPT INITIALIZED ===")
+    
+    -- Register building templates
+    sim.register_default_templates()
+    
+    -- Initialize some test tiles with stone
+    print("Initializing test tiles with stone...")
+    sim.initialize_tile_resources(0, 10, 10, 100.0)  -- 100 stone at (10,10)
+    sim.initialize_tile_resources(0, 11, 10, 150.0)  -- 150 stone at (11,10)
+    sim.initialize_tile_resources(0, 12, 10, 200.0)  -- 200 stone at (12,10)
+    sim.initialize_tile_resources(0, 10, 11, 75.0)   -- 75 stone at (10,11)
+    sim.initialize_tile_resources(0, 11, 11, 125.0)  -- 125 stone at (11,11)
+    sim.initialize_tile_resources(0, 12, 11, 175.0)  -- 175 stone at (12,11)
+    
+    print("Test tiles initialized")
+end
+
+function update(self, dt)
+    -- Update all entities (this will make miners work)
+    sim.update_all_entities(dt)
+end
+
+function on_input(self, action_id, action)
+    if action_id == hash("key_1") and action.pressed then
+        -- Test 1: Check tile resources
+        print("=== CHECKING TILE RESOURCES ===")
+        for y = 10, 11 do
+            for x = 10, 12 do
+                local tile = sim.get_tile_resources(0, x, y)
+                if tile then
+                    print(string.format("Tile (%d, %d): %.1f stone, excavated: %s", 
+                                       x, y, tile.stone, tostring(tile.excavated)))
+                else
+                    print(string.format("Tile (%d, %d): No data", x, y))
+                end
+            end
+        end
+        print("================================")
+        
+    elseif action_id == hash("key_2") and action.pressed then
+        -- Test 2: Create a miner building
+        print("=== CREATING MINER BUILDING ===")
+        local miner_id = sim.create_entity("miner", 9, 10, 0)  -- Place miner at (9,10) to mine (10,10)
+        if miner_id > 0 then
+            print(string.format("Created miner building with ID: %d", miner_id))
+        else
+            print("Failed to create miner building")
+        end
+        
+    elseif action_id == hash("key_3") and action.pressed then
+        -- Test 3: Create another miner
+        print("=== CREATING SECOND MINER ===")
+        local miner_id = sim.create_entity("miner", 11, 9, 0)  -- Place miner at (11,9) to mine (11,10)
+        if miner_id > 0 then
+            print(string.format("Created second miner building with ID: %d", miner_id))
+        else
+            print("Failed to create second miner building")
+        end
+        
+    elseif action_id == hash("key_4") and action.pressed then
+        -- Test 4: List all entities
+        print("=== LISTING ALL ENTITIES ===")
+        local entities = sim.get_all_entities()
+        for i = 1, #entities do
+            local entity = entities[i]
+            local entity_type = "unknown"
+            if entity.properties.mining_rate then
+                entity_type = "miner"
+            end
+            print(string.format("Entity %d: %s at (%.1f, %.1f)", 
+                               entity.id, entity_type, entity.grid_x, entity.grid_y))
+        end
+        print("============================")
+        
+    elseif action_id == hash("key_5") and action.pressed then
+        -- Test 5: Check miner storage
+        print("=== CHECKING MINER STORAGE ===")
+        local entities = sim.get_all_entities()
+        for i = 1, #entities do
+            local entity = entities[i]
+            if entity.properties.mining_rate then
+                local storage = sim.get_miner_storage(entity.id)
+                if storage then
+                    print(string.format("Miner %d: %d/%d stone (%.1f%% full)", 
+                                       entity.id, storage.stored, storage.capacity, storage.percent_full))
+                end
+            end
+        end
+        print("=============================")
+    end
+end
+
+function on_message(self, message_id, message, sender)
+    -- Handle messages if needed
+end
+
+function final(self)
+    -- Cleanup
+end

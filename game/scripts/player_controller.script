@@ -1,0 +1,266 @@
+-- This is a Defold script file with proper lifecycle functions
+
+-- Convert world coordinates to grid coordinates (Defold system)
+local function world_to_grid(world_x, world_y)
+    return world_x / 64.0, world_y / 64.0  -- No flipping needed
+end
+
+-- Convert grid coordinates to world coordinates (Defold system)  
+local function grid_to_world(grid_x, grid_y)
+    return grid_x * 64.0, grid_y * 64.0  -- No flipping needed
+end
+
+-- Define test_chunk_state as a local function
+local function test_chunk_state(player_id, building_id)
+    print("=== CHUNK STATE TEST ===")
+    
+    -- Get player position
+    local player = sim.get_entity(player_id)
+    local building = sim.get_entity(building_id)
+    
+    if player and building then
+        -- Debug: print all fields in the player entity
+        print("Player entity fields:")
+        for key, value in pairs(player) do
+            print("  " .. key .. " = " .. tostring(value))
+        end
+        
+        print("Building entity fields:")
+        for key, value in pairs(building) do
+            print("  " .. key .. " = " .. tostring(value))
+        end
+        
+        -- Only print chunk info if the fields exist
+        if player.chunk_x and player.chunk_y then
+            print(string.format("Player at grid (%.1f, %.1f) chunk (%d, %d) floor %d", 
+                               player.grid_x, player.grid_y, player.chunk_x, player.chunk_y, player.floor_z))
+        else
+            print(string.format("Player at grid (%.1f, %.1f) chunk (unknown)", 
+                               player.grid_x, player.grid_y))
+        end
+        
+        if building.chunk_x and building.chunk_y then
+            print(string.format("Building at grid (%.1f, %.1f) chunk (%d, %d) floor %d", 
+                               building.grid_x, building.grid_y, building.chunk_x, building.chunk_y, building.floor_z))
+        else
+            print(string.format("Building at grid (%.1f, %.1f) chunk (unknown)", 
+                               building.grid_x, building.grid_y))
+        end
+        
+        -- Check entities in building's chunk (if we have chunk coordinates)
+        if building.chunk_x and building.chunk_y then
+            local building_chunk_entities = sim.get_entities_in_chunk(building.floor_z, building.chunk_x, building.chunk_y)
+            print(string.format("Entities in building chunk (%d, %d) floor %d: %d", 
+                               building.chunk_x, building.chunk_y, building.floor_z, #building_chunk_entities))
+        end
+        
+        -- Check entities in player's chunk (if we have chunk coordinates)
+        if player.chunk_x and player.chunk_y then
+            local player_chunk_entities = sim.get_entities_in_chunk(player.floor_z, player.chunk_x, player.chunk_y)
+            print(string.format("Entities in player chunk (%d, %d) floor %d: %d", 
+                               player.chunk_x, player.chunk_y, player.floor_z, #player_chunk_entities))
+        end
+        
+        -- Check entities near building
+        local nearby_entities = sim.get_entities_in_radius(building.grid_x, building.grid_y, 100)  -- CHANGED: grid coordinates
+        print(string.format("Entities within 100 grid units of building: %d", #nearby_entities))
+        
+        -- Check if building is still there
+        local building_still_exists = sim.get_entity(building_id)
+        if building_still_exists then
+            print("Building still exists in simulation")
+        else
+            print("ERROR: Building disappeared!")
+        end
+    end
+    
+    print("=======================")
+end
+
+function init(self)
+    msg.post(".", "acquire_input_focus")
+    
+    -- Register the player entity template
+    local entity_templates = {
+        player = {
+            type = "player",
+            properties = {
+                move_speed = 100.0,
+                health = 100.0,
+                max_health = 100.0
+            },
+            int_properties = {
+                inventory_size = 50
+            }
+        },
+        
+        building = {
+            type = "building",
+            properties = { production_rate = 10.0 },
+            int_properties = { health = 100 }
+        }
+    }
+    
+    sim.register_entity_templates(entity_templates)
+    
+    -- Create the player entity in the simulation (grid coordinates)
+    self.player_id = sim.create_entity("player", 0, 0, 0)  -- Grid (0, 0) on floor 0
+    print("Created player with ID: " .. self.player_id)
+    
+    -- Create a building at a fixed position (grid coordinates) on floor 0
+    self.building_id = sim.create_entity("building", 1, 1, 0)  -- Grid (1, 1) on floor 0
+    print("Created building with ID: " .. self.building_id .. " at grid (1, 1) on floor 0")
+    
+    -- Create a building on floor 1 for testing
+    self.building_floor1_id = sim.create_entity("building", 1, 1, 1)  -- Grid (1, 1) on floor 1
+    print("Created building with ID: " .. self.building_floor1_id .. " at grid (1, 1) on floor 1")
+    
+    -- Create an observer for the player
+    -- This will make chunks around the player "hot" for simulation
+    self.observer_id = sim.set_observer(0, 0, 0, 32, 64, 0, 1)
+    print("Created observer with ID: " .. self.observer_id)
+    
+    -- Store the initial position
+    self.last_x = 0
+    self.last_y = 0
+    
+    -- Movement state
+    self.move_dx = 0
+    self.move_dy = 0
+    
+    -- Current floor
+    self.current_floor = 0
+    
+    -- Test initial chunk state
+    test_chunk_state(self.player_id, self.building_id)
+end
+
+function update(self, dt)
+    -- Move player in simulation based on input state
+    if self.move_dx ~= 0 or self.move_dy ~= 0 then
+        local player = sim.get_entity(self.player_id)
+        if player then
+            local move_speed = player.properties.move_speed
+            -- Convert world movement to grid movement
+            local grid_dx = (self.move_dx * move_speed * dt) / 64.0  -- CHANGED: Convert to grid movement
+            local grid_dy = (self.move_dy * move_speed * dt) / 64.0  -- CHANGED: Convert to grid movement
+            sim.move_entity(self.player_id, grid_dx, grid_dy)
+            
+            -- Update observer position to follow player
+            sim.move_observer(self.observer_id, 0, player.grid_x, player.grid_y)  -- CHANGED: grid coordinates
+        end
+    end
+    
+    -- Update Defold game object position from simulation
+    local player = sim.get_entity(self.player_id)
+    if player then
+        local world_x, world_y = grid_to_world(player.grid_x, player.grid_y)  -- CHANGED: Convert grid to world
+        
+        -- Only update if position changed (avoid unnecessary go.set_position calls)
+        if world_x ~= self.last_x or world_y ~= self.last_y then
+            go.set_position(vmath.vector3(world_x, world_y, 0), self.id)
+            self.last_x = world_x
+            self.last_y = world_y
+        end
+    end
+end
+
+function on_message(self, message_id, message, sender)
+    -- Handle messages from other game objects
+end
+
+function on_input(self, action_id, action)
+    -- Handle input events
+    if action_id == hash("key_w") then
+        if action.pressed then
+            self.move_dy = self.move_dy + 1  -- UP (positive Y in Defold)
+        elseif action.released then
+            self.move_dy = self.move_dy - 1
+        end
+    elseif action_id == hash("key_s") then
+        if action.pressed then
+            self.move_dy = self.move_dy - 1  -- DOWN (negative Y in Defold)
+        elseif action.released then
+            self.move_dy = self.move_dy + 1
+        end
+    elseif action_id == hash("key_a") then
+        if action.pressed then
+            self.move_dx = self.move_dx - 1  -- LEFT (negative X)
+        elseif action.released then
+            self.move_dx = self.move_dx + 1
+        end
+    elseif action_id == hash("key_d") then
+        if action.pressed then
+            self.move_dx = self.move_dx + 1  -- RIGHT (positive X)
+        elseif action.released then
+            self.move_dx = self.move_dx - 1
+        end
+    elseif action_id == hash("key_p") and action.pressed then
+        -- Debug output
+        local player = sim.get_entity(self.player_id)
+        if player then
+            local world_x, world_y = grid_to_world(player.grid_x, player.grid_y)  -- CHANGED: Convert grid to world
+            print(string.format("Player at world: (%.1f, %.1f) grid: (%.1f, %.1f) floor: %d", 
+                               world_x, world_y, player.grid_x, player.grid_y, player.floor_z))
+        end
+    elseif action_id == hash("key_t") and action.pressed then
+        -- Test chunk state
+        test_chunk_state(self.player_id, self.building_id)
+    elseif action_id == hash("key_r") and action.pressed then
+        -- Teleport player back to building (grid coordinates AND floor)
+        local building = sim.get_entity(self.building_id)
+        if building then
+            sim.set_entity_position(self.player_id, building.grid_x, building.grid_y)
+            sim.set_entity_floor(self.player_id, building.floor_z)
+            self.current_floor = building.floor_z
+            sim.set_current_floor(building.floor_z)
+            print(string.format("Teleported player to building at grid (%.1f, %.1f) on floor %d", 
+                               building.grid_x, building.grid_y, building.floor_z))
+        else
+            print("ERROR: Building not found!")
+        end
+    end
+
+    -- Floor switching
+    if action_id == hash("wheel_up") and action.pressed then
+        local new_floor = self.current_floor + 1
+        sim.set_current_floor(new_floor)
+        self.current_floor = new_floor
+        
+        -- Actually move the player to the new floor
+        sim.set_entity_floor(self.player_id, new_floor)
+        print("Moved player to floor " .. new_floor)
+        
+        -- List entities on the new floor
+        local floor_entities = sim.get_entities_on_floor(new_floor)
+        print("Entities on floor " .. new_floor .. ": " .. #floor_entities)
+        for i, entity_id in ipairs(floor_entities) do
+            local entity = sim.get_entity(entity_id)
+            if entity then
+                print("  Entity " .. entity_id .. " at (" .. entity.grid_x .. ", " .. entity.grid_y .. ")")
+            end
+        end
+    elseif action_id == hash("wheel_down") and action.pressed then
+        local new_floor = self.current_floor - 1
+        sim.set_current_floor(new_floor)
+        self.current_floor = new_floor
+        
+        -- Actually move the player to the new floor
+        sim.set_entity_floor(self.player_id, new_floor)
+        print("Moved player to floor " .. new_floor)
+        
+        -- List entities on the new floor
+        local floor_entities = sim.get_entities_on_floor(new_floor)
+        print("Entities on floor " .. new_floor .. ": " .. #floor_entities)
+        for i, entity_id in ipairs(floor_entities) do
+            local entity = sim.get_entity(entity_id)
+            if entity then
+                print("  Entity " .. entity_id .. " at (" .. entity.grid_x .. ", " .. entity.grid_y .. ")")
+            end
+        end
+    end
+end
+
+function final(self)
+    -- Cleanup when the game object is destroyed
+end
