@@ -1,7 +1,7 @@
 #include <dmsdk/sdk.h>
 #include "../world/world.hpp"
 #include "lua_bindings.hpp"
-#include "../world/entity_new.hpp"
+#include "../world/entity.hpp"
 #include "../components/component_registry.hpp"
 #include "../systems/inventory_system.hpp"
 #include <unordered_map>

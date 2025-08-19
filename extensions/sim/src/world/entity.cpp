@@ -1,4 +1,4 @@
-#include "entity_new.hpp"
+#include "entity.hpp"
 #include "world.hpp"
 #include "../systems/inventory_system.hpp"
 #include <unordered_map>
