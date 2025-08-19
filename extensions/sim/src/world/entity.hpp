@@ -9,14 +9,6 @@ namespace simcore {
 // Forward declaration
 struct Tile;
 
-enum EntityType {
-    ENTITY_PLAYER,
-    ENTITY_BUILDING,
-    ENTITY_BELT,
-    ENTITY_FACTORY,
-    // ... other types will be added later
-};
-
 struct EntityTemplate {
     std::string type;
     int32_t width = 1, height = 1;
@@ -24,20 +16,25 @@ struct EntityTemplate {
     std::unordered_map<std::string, int32_t> int_properties;
 };
 
+// Add inventory support to Entity struct
 struct Entity {
     int32_t id;
-    EntityType type;
-    float grid_x, grid_y;
-    int32_t chunk_x, chunk_y;
+    std::string category;  // "building", "player", "transport"
+    std::string type;      // "extractor", "assembler", "storage"
+    std::string name;      // "stone_extractor_1", "player_main"
+    float grid_x, grid_y;  // Bottom-left corner (Defold coordinates)
+    int32_t chunk_x, chunk_y;  // Bottom-left chunk
     int32_t floor_z;
-    int32_t width = 1, height = 1;
+    int32_t width = 1, height = 1;  // Building size in grid cells
     std::unordered_map<std::string, float> properties;
     std::unordered_map<std::string, int32_t> int_properties;
+    std::vector<int32_t> inventory_ids;  // IDs of inventories owned by this entity
     bool is_dirty = false;
 };
 
 // Entity management functions
-int32_t CreateEntity(const std::string& template_name, float grid_x, float grid_y, int32_t floor_z = 0);
+// Revert to the working template-based signature
+int32_t CreateEntity(const std::string& template_name, float grid_x, float grid_y, int32_t floor_z);
 Entity* GetEntity(int32_t id);
 void MoveEntity(int32_t id, float dx, float dy);
 void SetEntityPosition(int32_t id, float grid_x, float grid_y);

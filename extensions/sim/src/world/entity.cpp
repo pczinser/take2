@@ -23,13 +23,7 @@ static inline int64_t PackChunkCoords(int32_t z, int32_t cx, int32_t cy) {
     return ((int64_t)z << 32) | ((int64_t)cx << 16) | (int64_t)cy;
 }
 
-EntityType GetEntityTypeFromString(const std::string& type_str) {
-    if(type_str == "player") return ENTITY_PLAYER;
-    if(type_str == "building") return ENTITY_BUILDING;
-    // ... other types will be added later
-    return ENTITY_PLAYER; // default
-}
-
+// Revert to the working template-based implementation
 int32_t CreateEntity(const std::string& template_name, float grid_x, float grid_y, int32_t floor_z) {
     auto it = g_entity_templates.find(template_name);
     if(it == g_entity_templates.end()) {
@@ -60,7 +54,9 @@ int32_t CreateEntity(const std::string& template_name, float grid_x, float grid_
     
     Entity entity;
     entity.id = g_next_entity_id++;
-    entity.type = GetEntityTypeFromString(templ.type);
+    entity.category = templ.type;  // Use template type as category
+    entity.type = templ.type;      // Use template type as type
+    entity.name = template_name;   // Use template name as entity name
     entity.grid_x = grid_x;
     entity.grid_y = grid_y;
     entity.chunk_x = (int32_t)(grid_x / 32.0f);
@@ -70,6 +66,7 @@ int32_t CreateEntity(const std::string& template_name, float grid_x, float grid_
     entity.height = templ.height;
     entity.properties = templ.properties;
     entity.int_properties = templ.int_properties;
+    entity.inventory_ids = {};  // Initialize as empty vector
     entity.is_dirty = false;
     
     g_entities.push_back(entity);
@@ -275,7 +272,7 @@ bool CanPlaceBuilding(int32_t floor_z, int32_t base_x, int32_t base_y, int32_t w
         auto entities_in_chunk = GetEntitiesInChunk(floor_z, chunk_x, chunk_y);
         for(int32_t entity_id : entities_in_chunk) {
             Entity* existing_entity = GetEntity(entity_id);
-            if(existing_entity && existing_entity->type == ENTITY_BUILDING) {
+            if(existing_entity && existing_entity->category == "building") {
                 // Check if buildings overlap
                 if(DoBuildingsOverlap(base_x, base_y, width, height,
                                      (int32_t)existing_entity->grid_x, (int32_t)existing_entity->grid_y,

@@ -77,10 +77,55 @@ local function test_chunk_state(player_id, building_id)
     print("=======================")
 end
 
+-- Add this function to display player stats
+function show_player_stats(self)
+    local player = sim.get_entity(self.player_id)
+    if not player then
+        print("ERROR: Player entity not found!")
+        return
+    end
+    
+    print("=== PLAYER STATS ===")
+    print(string.format("Position: (%.1f, %.1f)", player.grid_x, player.grid_y))
+    print(string.format("Floor: %d", player.floor_z))
+    print(string.format("Chunk: (%d, %d)", player.chunk_x, player.chunk_y))
+    print(string.format("Entity ID: %d", player.id))
+    
+    -- Show inventory contents if player has inventories
+    if player.inventory_ids and #player.inventory_ids > 0 then
+        print("=== INVENTORIES ===")
+        for i, inventory_id in ipairs(player.inventory_ids) do
+            print(string.format("Inventory %d (ID: %d):", i, inventory_id))
+            
+            -- Get inventory capacity and free space
+            local capacity = sim.inventory_get_capacity(inventory_id)
+            local free_space = sim.inventory_get_free_space(inventory_id)
+            local used_space = capacity - free_space
+            
+            print(string.format("  Capacity: %d/%d (%.1f%% full)", used_space, capacity, (used_space/capacity)*100))
+            
+            -- Check for each item type
+            local item_types = {"stone", "iron", "wood", "herbs", "mushrooms", "crystal"}
+            local item_enum = {0, 1, 2, 3, 4, 5} -- ITEM_STONE = 0, etc.
+            
+            for j, item_name in ipairs(item_types) do
+                local count = sim.inventory_get_item_count(inventory_id, item_enum[j])
+                if count > 0 then
+                    print(string.format("    %s: %d", item_name, count))
+                end
+            end
+        end
+    else
+        print("No inventories found")
+    end
+    
+    print("===================")
+end
+
 function init(self)
     msg.post(".", "acquire_input_focus")
     
-    -- Register the player entity template
+    -- Register the player entity template (THIS WAS WORKING)
     local entity_templates = {
         player = {
             type = "player",
@@ -103,7 +148,7 @@ function init(self)
     
     sim.register_entity_templates(entity_templates)
     
-    -- Create the player entity in the simulation (grid coordinates)
+    -- Create the player entity in the simulation (grid coordinates) - THIS WAS WORKING
     self.player_id = sim.create_entity("player", 0, 0, 0)  -- Grid (0, 0) on floor 0
     print("Created player with ID: " .. self.player_id)
     
@@ -111,12 +156,11 @@ function init(self)
     self.building_id = sim.create_entity("building", 1, 1, 0)  -- Grid (1, 1) on floor 0
     print("Created building with ID: " .. self.building_id .. " at grid (1, 1) on floor 0")
     
-    -- Create a building on floor 1 for testing
-    self.building_floor1_id = sim.create_entity("building", 1, 1, 1)  -- Grid (1, 1) on floor 1
-    print("Created building with ID: " .. self.building_floor1_id .. " at grid (1, 1) on floor 1")
+    -- Create player inventory
+    local inventory_id = sim.inventory_create(0, 20)  -- 0 = INVENTORY_PLAYER
+    sim.assign_inventory_to_entity(inventory_id, self.player_id)
     
     -- Create an observer for the player
-    -- This will make chunks around the player "hot" for simulation
     self.observer_id = sim.set_observer(0, 0, 0, 32, 64, 0, 1)
     print("Created observer with ID: " .. self.observer_id)
     
@@ -131,8 +175,7 @@ function init(self)
     -- Current floor
     self.current_floor = 0
     
-    -- Test initial chunk state
-    test_chunk_state(self.player_id, self.building_id)
+    print("=== BUILDING TEST SCRIPT INITIALIZED ===")
 end
 
 function update(self, dt)
@@ -219,6 +262,8 @@ function on_input(self, action_id, action)
         else
             print("ERROR: Building not found!")
         end
+    elseif action_id == hash("key_tab") and action.pressed then
+        show_player_stats(self)
     end
 
     -- Floor switching

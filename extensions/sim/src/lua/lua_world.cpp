@@ -8,6 +8,9 @@
 #include <cstdio>
 #include <cmath>
 
+// Add inventory system bindings
+#include "../systems/inventory_system.hpp"
+
 namespace simcore {
 static int L_spawn_floor_at_z(lua_State* L){
     int32_t z=(int32_t)luaL_checkinteger(L,1);
@@ -30,11 +33,12 @@ static int L_get_active_chunks(lua_State* L){
     lua_setfield(L,-2,"warm"); return 1;
 }
 
+// Fix the create_entity function
 static int L_create_entity(lua_State* L) {
     const char* template_name = luaL_checkstring(L, 1);
     float grid_x = (float)luaL_checknumber(L, 2);
     float grid_y = (float)luaL_checknumber(L, 3);
-    int32_t floor_z = (int32_t)luaL_optinteger(L, 4, 0); // Default to floor 0
+    int32_t floor_z = (int32_t)luaL_optinteger(L, 4, 0);
     
     int32_t entity_id = CreateEntity(template_name, grid_x, grid_y, floor_z);
     lua_pushinteger(L, entity_id);
@@ -53,6 +57,16 @@ static int L_get_entity(lua_State* L) {
     lua_newtable(L);
     lua_pushinteger(L, entity->id);
     lua_setfield(L, -2, "id");
+    
+    // Add string fields
+    lua_pushstring(L, entity->category.c_str());
+    lua_setfield(L, -2, "category");
+    lua_pushstring(L, entity->type.c_str());
+    lua_setfield(L, -2, "type");
+    lua_pushstring(L, entity->name.c_str());
+    lua_setfield(L, -2, "name");
+    
+    // Add grid coordinates (MISSING!)
     lua_pushnumber(L, entity->grid_x);
     lua_setfield(L, -2, "grid_x");
     lua_pushnumber(L, entity->grid_y);
@@ -95,6 +109,14 @@ static int L_get_entity(lua_State* L) {
     lua_setfield(L, -2, "width");
     lua_pushinteger(L, entity->height);
     lua_setfield(L, -2, "height");
+    
+    // Add inventory_ids
+    lua_newtable(L);
+    for(size_t i = 0; i < entity->inventory_ids.size(); ++i) {
+        lua_pushinteger(L, entity->inventory_ids[i]);
+        lua_rawseti(L, -2, i + 1);
+    }
+    lua_setfield(L, -2, "inventory_ids");
     
     return 1;
 }
@@ -368,6 +390,12 @@ static int L_get_all_entities(lua_State* L) {
         
         lua_pushinteger(L, entities[i].id);
         lua_setfield(L, -2, "id");
+        lua_pushstring(L, entities[i].category.c_str());
+        lua_setfield(L, -2, "category");
+        lua_pushstring(L, entities[i].type.c_str());
+        lua_setfield(L, -2, "type");
+        lua_pushstring(L, entities[i].name.c_str());
+        lua_setfield(L, -2, "name");
         lua_pushnumber(L, entities[i].grid_x);
         lua_setfield(L, -2, "grid_x");
         lua_pushnumber(L, entities[i].grid_y);
@@ -387,8 +415,134 @@ static int L_get_all_entities(lua_State* L) {
     return 1;
 }
 
+// Add inventory system bindings
+static int L_inventory_create(lua_State* L) {
+    int32_t type = (int32_t)luaL_checkinteger(L, 1);
+    int32_t capacity = (int32_t)luaL_checkinteger(L, 2);
+    int32_t id = Inventory_Create((InventoryType)type, capacity);
+    lua_pushinteger(L, id);
+    return 1;
+}
+
+static int L_inventory_add_items(lua_State* L) {
+    int32_t id = (int32_t)luaL_checkinteger(L, 1);
+    int32_t item = (int32_t)luaL_checkinteger(L, 2);
+    int32_t amount = (int32_t)luaL_checkinteger(L, 3);
+    bool success = Inventory_AddItems(id, (ItemType)item, amount);
+    lua_pushboolean(L, success);
+    return 1;
+}
+
+static int L_inventory_get_item_count(lua_State* L) {
+    int32_t id = (int32_t)luaL_checkinteger(L, 1);
+    int32_t item = (int32_t)luaL_checkinteger(L, 2);
+    int32_t count = Inventory_GetItemCount(id, (ItemType)item);
+    lua_pushinteger(L, count);
+    return 1;
+}
+
+static int L_inventory_get_stats(lua_State* L) {
+    InventoryStats stats = Inventory_GetStats();
+    lua_pushinteger(L, stats.total_inventories);
+    lua_pushinteger(L, stats.total_items);
+    lua_pushinteger(L, stats.total_capacity);
+    return 3;
+}
+
+static int L_inventory_get_capacity(lua_State* L) {
+    int32_t id = (int32_t)luaL_checkinteger(L, 1);
+    int32_t capacity = Inventory_GetCapacity(id);
+    lua_pushinteger(L, capacity);
+    return 1;
+}
+
+static int L_inventory_get_free_space(lua_State* L) {
+    int32_t id = (int32_t)luaL_checkinteger(L, 1);
+    int32_t free_space = Inventory_GetFreeSpace(id);
+    lua_pushinteger(L, free_space);
+    return 1;
+}
+
+static int L_inventory_remove_items(lua_State* L) {
+    int32_t id = (int32_t)luaL_checkinteger(L, 1);
+    int32_t item = (int32_t)luaL_checkinteger(L, 2);
+    int32_t amount = (int32_t)luaL_checkinteger(L, 3);
+    bool success = Inventory_RemoveItems(id, (ItemType)item, amount);
+    lua_pushboolean(L, success);
+    return 1;
+}
+
+static int L_inventory_transfer_items(lua_State* L) {
+    int32_t from_id = (int32_t)luaL_checkinteger(L, 1);
+    int32_t to_id = (int32_t)luaL_checkinteger(L, 2);
+    int32_t item = (int32_t)luaL_checkinteger(L, 3);
+    int32_t amount = (int32_t)luaL_checkinteger(L, 4);
+    bool success = Inventory_TransferItems(from_id, to_id, (ItemType)item, amount);
+    lua_pushboolean(L, success);
+    return 1;
+}
+
+static int L_inventory_has_items(lua_State* L) {
+    int32_t id = (int32_t)luaL_checkinteger(L, 1);
+    int32_t item = (int32_t)luaL_checkinteger(L, 2);
+    int32_t amount = (int32_t)luaL_checkinteger(L, 3);
+    bool has_items = Inventory_HasItems(id, (ItemType)item, amount);
+    lua_pushboolean(L, has_items);
+    return 1;
+}
+
+static int L_assign_inventory_to_entity(lua_State* L) {
+    int32_t entity_id = (int32_t)luaL_checkinteger(L, 1);
+    int32_t inventory_id = (int32_t)luaL_checkinteger(L, 2);
+    
+    Entity* entity = GetEntity(entity_id);
+    if(entity) {
+        entity->inventory_ids.push_back(inventory_id);
+        printf("Assigned inventory %d to entity %d\n", inventory_id, entity_id);
+        lua_pushboolean(L, true);
+    } else {
+        printf("ERROR: Entity %d not found\n", entity_id);
+        lua_pushboolean(L, false);
+    }
+    return 1;
+}
+
 void LuaRegister_World(lua_State* L){
-    static const luaL_reg API[]={{"spawn_floor_at_z",L_spawn_floor_at_z},{"get_active_chunks",L_get_active_chunks},{"create_entity", L_create_entity},{"get_entity", L_get_entity},{"move_entity", L_move_entity},{"register_entity_templates", L_register_entity_templates},{"get_entities_in_chunk", L_get_entities_in_chunk},{"get_entities_in_radius", L_get_entities_in_radius},{"set_entity_position", L_set_entity_position},{"set_entity_floor", L_set_entity_floor},{"set_current_floor", L_set_current_floor},{"get_current_floor", L_get_current_floor},{"get_entities_on_floor", L_get_entities_on_floor},{"can_create_chunk_on_floor", L_can_create_chunk_on_floor},{"get_floor_max_chunks", L_get_floor_max_chunks},{"get_entity_occupied_tiles", L_get_entity_occupied_tiles},{"get_entity_occupied_chunks", L_get_entity_occupied_chunks},{"get_entities_at_tile", L_get_entities_at_tile},{"get_tile_resources", L_get_tile_resources},{"initialize_tile_resources", L_initialize_tile_resources},{"get_all_entities", L_get_all_entities},{"register_default_templates", L_register_default_templates},{0,0}};
+    static const luaL_reg API[]={
+        {"spawn_floor_at_z",L_spawn_floor_at_z},
+        {"get_active_chunks",L_get_active_chunks},
+        {"create_entity", L_create_entity},
+        {"get_entity", L_get_entity},
+        {"move_entity", L_move_entity},
+        {"register_entity_templates", L_register_entity_templates},
+        {"get_entities_in_chunk", L_get_entities_in_chunk},
+        {"get_entities_in_radius", L_get_entities_in_radius},
+        {"set_entity_position", L_set_entity_position},
+        {"set_entity_floor", L_set_entity_floor},
+        {"set_current_floor", L_set_current_floor},
+        {"get_current_floor", L_get_current_floor},
+        {"get_entities_on_floor", L_get_entities_on_floor},
+        {"can_create_chunk_on_floor", L_can_create_chunk_on_floor},
+        {"get_floor_max_chunks", L_get_floor_max_chunks},
+        {"get_entity_occupied_tiles", L_get_entity_occupied_tiles},
+        {"get_entity_occupied_chunks", L_get_entity_occupied_chunks},
+        {"get_entities_at_tile", L_get_entities_at_tile},
+        {"get_tile_resources", L_get_tile_resources},
+        {"initialize_tile_resources", L_initialize_tile_resources},
+        {"get_all_entities", L_get_all_entities},
+        {"register_default_templates", L_register_default_templates},
+        {"inventory_create", L_inventory_create},
+        {"inventory_add_items", L_inventory_add_items},
+        {"inventory_get_item_count", L_inventory_get_item_count},
+        {"inventory_get_stats", L_inventory_get_stats},
+        {"inventory_get_capacity", L_inventory_get_capacity},
+        {"inventory_get_free_space", L_inventory_get_free_space},
+        {"inventory_remove_items", L_inventory_remove_items},
+        {"inventory_transfer_items", L_inventory_transfer_items},
+        {"inventory_has_items", L_inventory_has_items},
+        {"assign_inventory_to_entity", L_assign_inventory_to_entity},
+        {0,0}
+    };
     int top=lua_gettop(L); lua_getglobal(L,"sim"); if(lua_isnil(L,-1)){ lua_pop(L,1); lua_newtable(L); }
     luaL_register(L,0,API); lua_setglobal(L,"sim"); (void)top;
 }
