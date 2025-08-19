@@ -78,6 +78,11 @@ Entity* GetEntity(EntityId id);
 void DestroyEntity(EntityId id);  // Removes entity and all its components
 const std::vector<Entity>& GetAllEntities();
 
+// Entity movement functions
+void MoveEntity(EntityId id, float dx, float dy);
+void SetEntityPosition(EntityId id, float grid_x, float grid_y);
+void SetEntityFloor(EntityId id, int32_t floor_z);
+
 // === TEMPLATE MANAGEMENT ===
 void RegisterEntityTemplate(const std::string& name, const EntityTemplate& templ);
 EntityTemplate* GetEntityTemplate(const std::string& name);

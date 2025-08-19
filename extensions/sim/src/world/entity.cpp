@@ -196,6 +196,95 @@ const std::vector<Entity>& GetAllEntities() {
     return g_entities;
 }
 
+// === ENTITY MOVEMENT FUNCTIONS ===
+
+void MoveEntity(EntityId id, float dx, float dy) {
+    components::TransformComponent* transform = components::g_transform_components.GetComponent(id);
+    if (!transform) return;
+    
+    float new_x = transform->grid_x + dx;
+    float new_y = transform->grid_y + dy;
+    int32_t new_chunk_x = (int32_t)(new_x / 32.0f);
+    int32_t new_chunk_y = (int32_t)(new_y / 32.0f);
+    
+    // Check if new position is valid
+    if (!CanCreateChunkOnFloor(transform->floor_z, new_chunk_x, new_chunk_y)) {
+        printf("Entity %d movement blocked - would exceed floor limits\n", id);
+        return;
+    }
+    
+    // Store old position
+    int32_t old_chunk_x = transform->chunk_x;
+    int32_t old_chunk_y = transform->chunk_y;
+    int32_t old_floor_z = transform->floor_z;
+    
+    // Update position
+    transform->grid_x = new_x;
+    transform->grid_y = new_y;
+    transform->chunk_x = new_chunk_x;
+    transform->chunk_y = new_chunk_y;
+    
+    // Mark dirty
+    Entity* entity = GetEntity(id);
+    if (entity) entity->is_dirty = true;
+    
+    // Update chunk mapping if needed
+    if (old_chunk_x != new_chunk_x || old_chunk_y != new_chunk_y) {
+        UpdateEntityChunkMapping(id, old_chunk_x, old_chunk_y, old_floor_z);
+    }
+}
+
+void SetEntityPosition(EntityId id, float grid_x, float grid_y) {
+    components::TransformComponent* transform = components::g_transform_components.GetComponent(id);
+    if (!transform) return;
+    
+    // Store old position
+    int32_t old_chunk_x = transform->chunk_x;
+    int32_t old_chunk_y = transform->chunk_y;
+    int32_t old_floor_z = transform->floor_z;
+    
+    // Update position
+    transform->grid_x = grid_x;
+    transform->grid_y = grid_y;
+    transform->chunk_x = (int32_t)(grid_x / 32.0f);
+    transform->chunk_y = (int32_t)(grid_y / 32.0f);
+    
+    // Mark dirty
+    Entity* entity = GetEntity(id);
+    if (entity) entity->is_dirty = true;
+    
+    // Update chunk mapping if needed
+    if (old_chunk_x != transform->chunk_x || old_chunk_y != transform->chunk_y) {
+        UpdateEntityChunkMapping(id, old_chunk_x, old_chunk_y, old_floor_z);
+    }
+}
+
+void SetEntityFloor(EntityId id, int32_t floor_z) {
+    components::TransformComponent* transform = components::g_transform_components.GetComponent(id);
+    if (!transform) return;
+    
+    int32_t old_floor_z = transform->floor_z;
+    transform->floor_z = floor_z;
+    
+    // Ensure target floor exists
+    Floor* floor = GetFloorByZ(floor_z);
+    if (!floor) {
+        int32_t chunks_w = (floor_z > 0) ? 2 : 4;
+        int32_t chunks_h = (floor_z > 0) ? 2 : 4;
+        SpawnFloorAtZ(floor_z, chunks_w, chunks_h, 32, 32);
+        printf("Auto-created floor %d\n", floor_z);
+    }
+    
+    // Mark dirty
+    Entity* entity = GetEntity(id);
+    if (entity) entity->is_dirty = true;
+    
+    // Update chunk mapping (floor changed)
+    UpdateEntityChunkMapping(id, transform->chunk_x, transform->chunk_y, old_floor_z);
+    
+    printf("Entity %d moved from floor %d to floor %d\n", id, old_floor_z, floor_z);
+}
+
 // === TEMPLATE MANAGEMENT ===
 
 void RegisterEntityTemplate(const std::string& name, const EntityTemplate& templ) {
