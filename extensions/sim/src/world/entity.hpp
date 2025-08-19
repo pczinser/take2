@@ -11,13 +11,16 @@ namespace simcore {
 struct Tile;
 
 struct EntityTemplate {
-    const std::string type;
-    const int32_t width;
-    const int32_t height;
-    const std::unordered_map<std::string, float> properties;
-    const std::unordered_map<std::string, int32_t> int_properties;
+    std::string type;
+    int32_t width;
+    int32_t height;
+    std::unordered_map<std::string, float> properties;
+    std::unordered_map<std::string, int32_t> int_properties;
     
-    // Constructor to initialize const members
+    // Default constructor
+    EntityTemplate() : width(1), height(1) {}
+    
+    // Constructor to initialize members
     EntityTemplate(const std::string& t, int32_t w, int32_t h, 
                    const std::unordered_map<std::string, float>& props,
                    const std::unordered_map<std::string, int32_t>& int_props)
