@@ -144,66 +144,50 @@ static int L_register_entity_templates(lua_State* L) {
         const char* template_name = lua_tostring(L, -2);
         
         if(!lua_istable(L, -1)) {
-            luaL_error(L, "Template %s is not a table", template_name);
-            return 0;
+            printf("Template %s is not a table\n", template_name);
+            lua_pop(L, 1);
+            continue;
         }
         
-        EntityTemplate templ;
-        templ.type = "";
-        templ.properties.clear();
-        templ.int_properties.clear();
-        
-        // Parse the template table
-        lua_pushnil(L); // First key of template
-        while(lua_next(L, -2) != 0) {
-            const char* key = lua_tostring(L, -2);
-            
-            if(strcmp(key, "type") == 0) {
-                templ.type = lua_tostring(L, -1);
-            }
-            else if(strcmp(key, "properties") == 0 && lua_istable(L, -1)) {
-                // Parse properties table
-                lua_pushnil(L);
-                while(lua_next(L, -2) != 0) {
-                    const char* prop_key = lua_tostring(L, -2);
-                    float prop_value = (float)lua_tonumber(L, -1);
-                    templ.properties[prop_key] = prop_value;
-                    lua_pop(L, 1);
-                }
-            }
-            else if(strcmp(key, "int_properties") == 0 && lua_istable(L, -1)) {
-                // Parse int_properties table
-                lua_pushnil(L);
-                while(lua_next(L, -2) != 0) {
-                    const char* prop_key = lua_tostring(L, -2);
-                    int32_t prop_value = (int32_t)lua_tointeger(L, -1);
-                    templ.int_properties[prop_key] = prop_value;
-                    lua_pop(L, 1);
-                }
-            }
-            else if(strcmp(key, "size") == 0 && lua_istable(L, -1)) {
-                lua_pushstring(L, "width");
-                lua_gettable(L, -2);
-                templ.width = (int32_t)lua_tointeger(L, -1);
-                lua_pop(L, 1);
-                
-                lua_pushstring(L, "height");
-                lua_gettable(L, -2);
-                templ.height = (int32_t)lua_tointeger(L, -1);
-                lua_pop(L, 1);
-            }
-            
-            lua_pop(L, 1); // Remove value, keep key for next iteration
-        }
-        
-        // Register the template
+        // Create const template from Lua data
+        EntityTemplate templ = CreateTemplateFromLua(L, -1);
         RegisterEntityTemplate(template_name, templ);
-        printf("Registered entity template: %s\n", template_name);
         
-        lua_pop(L, 1); // Remove value, keep key for next iteration
+        lua_pop(L, 1);
     }
     
     return 0;
+}
+
+// Helper function to create const template from Lua table
+EntityTemplate CreateTemplateFromLua(lua_State* L, int table_index) {
+    std::string type = "building";  // default
+    int32_t width = 1, height = 1;
+    std::unordered_map<std::string, float> properties;
+    std::unordered_map<std::string, int32_t> int_properties;
+    
+    // Read type
+    lua_getfield(L, table_index, "type");
+    if(lua_isstring(L, -1)) {
+        type = lua_tostring(L, -1);
+    }
+    lua_pop(L, 1);
+    
+    // Read properties
+    lua_getfield(L, table_index, "properties");
+    if(lua_istable(L, -1)) {
+        ReadPropertiesFromLua(L, -1, properties);
+    }
+    lua_pop(L, 1);
+    
+    // Read int_properties
+    lua_getfield(L, table_index, "int_properties");
+    if(lua_istable(L, -1)) {
+        ReadIntPropertiesFromLua(L, -1, int_properties);
+    }
+    lua_pop(L, 1);
+    
+    return EntityTemplate(type, width, height, properties, int_properties);
 }
 
 static int L_get_entities_in_chunk(lua_State* L) {

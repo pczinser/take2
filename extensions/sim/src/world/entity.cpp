@@ -31,7 +31,7 @@ int32_t CreateEntity(const std::string& template_name, float grid_x, float grid_
         return -1;
     }
     
-    const EntityTemplate& templ = it->second;
+    const EntityTemplate& templ = it->second;  // This is now const
     
     // Check if building can be placed (for buildings only)
     if(templ.type == "building") {
@@ -54,9 +54,9 @@ int32_t CreateEntity(const std::string& template_name, float grid_x, float grid_
     
     Entity entity;
     entity.id = g_next_entity_id++;
-    entity.category = templ.type;  // Use template type as category
-    entity.type = templ.type;      // Use template type as type
-    entity.name = template_name;   // Use template name as entity name
+    entity.category = templ.type;
+    entity.type = templ.type;
+    entity.name = template_name;
     entity.grid_x = grid_x;
     entity.grid_y = grid_y;
     entity.chunk_x = (int32_t)(grid_x / 32.0f);
@@ -64,9 +64,9 @@ int32_t CreateEntity(const std::string& template_name, float grid_x, float grid_
     entity.floor_z = floor_z;
     entity.width = templ.width;
     entity.height = templ.height;
-    entity.properties = templ.properties;
-    entity.int_properties = templ.int_properties;
-    entity.inventory_ids = {};  // Initialize as empty vector
+    entity.properties = templ.properties;  // Copy from const template to mutable entity
+    entity.int_properties = templ.int_properties;  // Copy from const template to mutable entity
+    entity.inventory_ids = {};
     entity.is_dirty = false;
     
     g_entities.push_back(entity);
@@ -183,7 +183,7 @@ const std::vector<Entity>& GetAllEntities() {
 }
 
 void RegisterEntityTemplate(const std::string& name, const EntityTemplate& templ) {
-    g_entity_templates[name] = templ;
+    g_entity_templates[name] = templ;  // Copy the const template
 }
 
 EntityTemplate* GetEntityTemplate(const std::string& name) {

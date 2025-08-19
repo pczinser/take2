@@ -7,6 +7,7 @@
 #include "systems/portal_system.hpp"
 #include "core/events.hpp"
 #include "lua/lua_bindings.hpp"
+#include "systems/extractor_system.hpp"
 
 namespace simcore {
 
@@ -15,6 +16,7 @@ static double g_hz = 60.0;
 static void StepOneTick(float dt){
     RebuildActivationUnion();
     Portal_Step((int32_t)(dt*1000.0), (int64_t)(NowSeconds()*1000.0));
+    Extractor_Step(dt);
     // Consume events here later (golems etc.). For now we just clear each frame.
     Events_Clear();
 }
@@ -25,6 +27,7 @@ static dmExtension::Result AppFinalize(dmExtension::AppParams*)   { return dmExt
 static dmExtension::Result Initialize(dmExtension::Params* params){
     TimeInit();
     Portal_Init();
+    Extractor_Init();
     LuaRegister_All(params->m_L);
     return dmExtension::RESULT_OK;
 }
