@@ -87,6 +87,11 @@ void RegisterDefaultEntityTemplates();
 // === COMPONENT CREATION ===
 void CreateComponentsFromTemplate(EntityId entity_id, const EntityTemplate& templ, float grid_x, float grid_y, int32_t floor_z);
 
+// Chunk mapping functions (for performance)
+void AddEntityToChunkMapping(EntityId entity_id);
+void RemoveEntityFromChunkMapping(EntityId entity_id);
+void UpdateEntityChunkMapping(EntityId entity_id, int32_t old_chunk_x, int32_t old_chunk_y, int32_t old_floor_z);
+
 // === SPATIAL QUERIES (using components) ===
 std::vector<EntityId> GetEntitiesInChunk(int32_t z, int32_t chunk_x, int32_t chunk_y);
 std::vector<EntityId> GetEntitiesInRadius(float grid_x, float grid_y, float radius);

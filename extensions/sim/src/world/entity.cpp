@@ -430,6 +430,9 @@ void ClearEntitySystem() {
     // Clear all components
     components::ClearComponentSystem();
     
+    // Clear chunk mapping
+    g_chunk_entities.clear();
+    
     // Clear entities
     g_entities.clear();
     g_entity_templates.clear();

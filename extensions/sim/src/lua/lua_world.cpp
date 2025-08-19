@@ -229,6 +229,18 @@ static int L_get_entities_at_tile(lua_State* L) {
     return 1;
 }
 
+static int L_get_entities_on_floor(lua_State* L) {
+    int32_t floor_z = (int32_t)luaL_checkinteger(L, 1);
+    auto entities = GetEntitiesOnFloor(floor_z);
+    
+    lua_newtable(L);
+    for(int i = 0; i < (int)entities.size(); i++) {
+        lua_pushinteger(L, entities[i]);
+        lua_rawseti(L, -2, i + 1);
+    }
+    return 1;
+}
+
 // === TEMPLATE REGISTRATION ===
 
 static int L_register_entity_templates(lua_State* L) {
@@ -449,6 +461,7 @@ static const luaL_Reg sim_functions[] = {
     {"get_entities_in_chunk", L_get_entities_in_chunk},
     {"get_entities_in_radius", L_get_entities_in_radius},
     {"get_entities_at_tile", L_get_entities_at_tile},
+    {"get_entities_on_floor", L_get_entities_on_floor},
     
     // Template registration
     {"register_entity_templates", L_register_entity_templates},
