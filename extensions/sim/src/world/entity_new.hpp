@@ -7,7 +7,8 @@
 
 namespace simcore {
 
-using EntityId = int32_t;
+// Use the same EntityId type as components
+using EntityId = components::EntityId;
 
 // Clean EntityTemplate for pure component-based entities
 struct EntityTemplate {

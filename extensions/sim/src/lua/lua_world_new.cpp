@@ -441,39 +441,7 @@ static const luaL_Reg sim_functions[] = {
 
 } // namespace simcore
 
-// Register the extension
-static int LuaInit(lua_State* L) {
-    int top = lua_gettop(L);
-    
+// Lua registration function (called from sim_entry.cpp)
+void simcore::LuaRegister_World(lua_State* L) {
     luaL_register(L, "sim", simcore::sim_functions);
-    
-    lua_pop(L, 1);
-    assert(top == lua_gettop(L));
-    return 0;
 }
-
-static dmExtension::Result AppInitialize(dmExtension::AppParams* params) {
-    return dmExtension::RESULT_OK;
-}
-
-static dmExtension::Result Initialize(dmExtension::Params* params) {
-    LuaInit(params->m_L);
-    
-    // Initialize systems
-    simcore::InitializeEntitySystem();
-    simcore::Inventory_Init();
-    
-    return dmExtension::RESULT_OK;
-}
-
-static dmExtension::Result AppFinalize(dmExtension::AppParams* params) {
-    return dmExtension::RESULT_OK;
-}
-
-static dmExtension::Result Finalize(dmExtension::Params* params) {
-    simcore::ClearEntitySystem();
-    simcore::Inventory_Clear();
-    return dmExtension::RESULT_OK;
-}
-
-DM_DECLARE_EXTENSION(sim, "sim", AppInitialize, AppFinalize, Initialize, Finalize, 0, 0)

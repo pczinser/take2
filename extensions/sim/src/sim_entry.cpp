@@ -3,11 +3,13 @@
 #include "core/sim_time.hpp"
 #include "activation/activation.hpp"
 #include "world/world.hpp"
+#include "world/entity_new.hpp"
 #include "observer/observer.hpp"
 #include "systems/portal_system.hpp"
 #include "core/events.hpp"
 #include "lua/lua_bindings.hpp"
 #include "systems/extractor_system.hpp"
+#include "components/component_registry.hpp"
 
 namespace simcore {
 
@@ -28,7 +30,13 @@ static dmExtension::Result Initialize(dmExtension::Params* params){
     TimeInit();
     Portal_Init();
     Extractor_Init();
+    
+    // Initialize new entity system (includes component system)
+    InitializeEntitySystem();
+    
+    // Register Lua functions
     LuaRegister_All(params->m_L);
+    
     return dmExtension::RESULT_OK;
 }
 

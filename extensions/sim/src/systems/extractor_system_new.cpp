@@ -5,6 +5,8 @@
 
 namespace simcore {
 
+using EntityId = components::EntityId;
+
 static ExtractorStats g_stats = {0, 0, 0};
 
 void Extractor_Init() {

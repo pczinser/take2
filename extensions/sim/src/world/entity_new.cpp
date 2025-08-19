@@ -1,5 +1,6 @@
 #include "entity_new.hpp"
 #include "world.hpp"
+#include "../systems/inventory_system.hpp"
 #include <unordered_map>
 #include <algorithm>
 #include <string>
