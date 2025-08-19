@@ -3,6 +3,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include "../components/component_registry.hpp"
 
 namespace simcore {
 
@@ -70,5 +71,9 @@ void SetCurrentFloor(int32_t floor_z);
 int32_t GetCurrentFloor();
 
 void UpdateEntityChunk(Entity* entity, int32_t old_chunk_x, int32_t old_chunk_y);
+
+// Component creation from templates (Phase 2 migration support)
+void CreateComponentsFromTemplate(int32_t entity_id, const std::string& template_name, float grid_x, float grid_y, int32_t floor_z);
+void CreateComponentsFromEntity(int32_t entity_id, const Entity& entity);
 
 } // namespace simcore
