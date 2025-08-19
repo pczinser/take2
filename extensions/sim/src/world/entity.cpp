@@ -14,8 +14,112 @@ static std::vector<Entity> g_entities;
 static EntityId g_next_entity_id = 1;
 static std::unordered_map<std::string, EntityTemplate> g_entity_templates;
 
+// Efficient chunk-to-entity mapping for spatial queries
+static std::unordered_map<int64_t, std::vector<EntityId>> g_chunk_entities;
+
 // Current floor for queries
 static int32_t g_current_floor_z = 0;
+
+// Helper to pack chunk coordinates for efficient lookup
+static inline int64_t PackChunkCoords(int32_t z, int32_t cx, int32_t cy) {
+    return ((int64_t)z << 32) | ((int64_t)cx << 16) | (int64_t)cy;
+}
+
+// === CHUNK MAPPING HELPERS ===
+
+void AddEntityToChunkMapping(EntityId entity_id) {
+    components::TransformComponent* transform = components::g_transform_components.GetComponent(entity_id);
+    components::BuildingComponent* building = components::g_building_components.GetComponent(entity_id);
+    
+    if (!transform) return;
+    
+    // Calculate which chunks this entity occupies
+    int32_t start_chunk_x = transform->chunk_x;
+    int32_t start_chunk_y = transform->chunk_y;
+    int32_t end_chunk_x = start_chunk_x;
+    int32_t end_chunk_y = start_chunk_y;
+    
+    // If entity has building component, it might span multiple chunks
+    if (building) {
+        int32_t entity_end_x = (int32_t)transform->grid_x + building->width - 1;
+        int32_t entity_end_y = (int32_t)transform->grid_y + building->height - 1;
+        end_chunk_x = entity_end_x / 32;
+        end_chunk_y = entity_end_y / 32;
+    }
+    
+    // Add entity to all chunks it occupies
+    for (int32_t cx = start_chunk_x; cx <= end_chunk_x; ++cx) {
+        for (int32_t cy = start_chunk_y; cy <= end_chunk_y; ++cy) {
+            int64_t chunk_key = PackChunkCoords(transform->floor_z, cx, cy);
+            g_chunk_entities[chunk_key].push_back(entity_id);
+        }
+    }
+    
+    printf("Added entity %d to chunk mapping (chunks %d,%d to %d,%d on floor %d)\n", 
+           entity_id, start_chunk_x, start_chunk_y, end_chunk_x, end_chunk_y, transform->floor_z);
+}
+
+void RemoveEntityFromChunkMapping(EntityId entity_id) {
+    components::TransformComponent* transform = components::g_transform_components.GetComponent(entity_id);
+    components::BuildingComponent* building = components::g_building_components.GetComponent(entity_id);
+    
+    if (!transform) return;
+    
+    // Calculate which chunks this entity occupies
+    int32_t start_chunk_x = transform->chunk_x;
+    int32_t start_chunk_y = transform->chunk_y;
+    int32_t end_chunk_x = start_chunk_x;
+    int32_t end_chunk_y = start_chunk_y;
+    
+    if (building) {
+        int32_t entity_end_x = (int32_t)transform->grid_x + building->width - 1;
+        int32_t entity_end_y = (int32_t)transform->grid_y + building->height - 1;
+        end_chunk_x = entity_end_x / 32;
+        end_chunk_y = entity_end_y / 32;
+    }
+    
+    // Remove entity from all chunks it occupied
+    for (int32_t cx = start_chunk_x; cx <= end_chunk_x; ++cx) {
+        for (int32_t cy = start_chunk_y; cy <= end_chunk_y; ++cy) {
+            int64_t chunk_key = PackChunkCoords(transform->floor_z, cx, cy);
+            auto& chunk_entities = g_chunk_entities[chunk_key];
+            chunk_entities.erase(
+                std::remove(chunk_entities.begin(), chunk_entities.end(), entity_id),
+                chunk_entities.end());
+        }
+    }
+}
+
+void UpdateEntityChunkMapping(EntityId entity_id, int32_t old_chunk_x, int32_t old_chunk_y, int32_t old_floor_z) {
+    // Remove from old chunks
+    components::TransformComponent* transform = components::g_transform_components.GetComponent(entity_id);
+    components::BuildingComponent* building = components::g_building_components.GetComponent(entity_id);
+    
+    if (!transform) return;
+    
+    // Remove from old position
+    int32_t old_end_chunk_x = old_chunk_x;
+    int32_t old_end_chunk_y = old_chunk_y;
+    
+    if (building) {
+        // Calculate old occupied chunks (approximate)
+        old_end_chunk_x = (old_chunk_x * 32 + building->width - 1) / 32;
+        old_end_chunk_y = (old_chunk_y * 32 + building->height - 1) / 32;
+    }
+    
+    for (int32_t cx = old_chunk_x; cx <= old_end_chunk_x; ++cx) {
+        for (int32_t cy = old_chunk_y; cy <= old_end_chunk_y; ++cy) {
+            int64_t old_chunk_key = PackChunkCoords(old_floor_z, cx, cy);
+            auto& chunk_entities = g_chunk_entities[old_chunk_key];
+            chunk_entities.erase(
+                std::remove(chunk_entities.begin(), chunk_entities.end(), entity_id),
+                chunk_entities.end());
+        }
+    }
+    
+    // Add to new position
+    AddEntityToChunkMapping(entity_id);
+}
 
 // === ENTITY MANAGEMENT ===
 
@@ -56,6 +160,9 @@ EntityId CreateEntity(const std::string& template_name, float grid_x, float grid
     
     g_entities.push_back(entity);
     
+    // Add entity to chunk mapping for efficient spatial queries
+    AddEntityToChunkMapping(entity_id);
+    
     printf("Created entity %d (%s) at grid (%.1f, %.1f) on floor %d\n", 
            entity_id, template_name.c_str(), grid_x, grid_y, floor_z);
     
@@ -70,6 +177,9 @@ Entity* GetEntity(EntityId id) {
 }
 
 void DestroyEntity(EntityId id) {
+    // Remove from chunk mapping
+    RemoveEntityFromChunkMapping(id);
+    
     // Remove all components
     components::RemoveAllComponents(id);
     
@@ -189,20 +299,15 @@ void CreateComponentsFromTemplate(EntityId entity_id, const EntityTemplate& temp
 // === SPATIAL QUERIES (using components) ===
 
 std::vector<EntityId> GetEntitiesInChunk(int32_t z, int32_t chunk_x, int32_t chunk_y) {
-    std::vector<EntityId> result;
+    // Efficient O(1) lookup using chunk mapping
+    int64_t chunk_key = PackChunkCoords(z, chunk_x, chunk_y);
+    auto it = g_chunk_entities.find(chunk_key);
     
-    // Query all entities with transform components
-    auto entities_with_transform = components::g_transform_components.GetEntitiesWithComponent();
-    
-    for(EntityId entity_id : entities_with_transform) {
-        components::TransformComponent* transform = components::g_transform_components.GetComponent(entity_id);
-        if(transform && transform->floor_z == z && 
-           transform->chunk_x == chunk_x && transform->chunk_y == chunk_y) {
-            result.push_back(entity_id);
-        }
+    if (it != g_chunk_entities.end()) {
+        return it->second;  // Return copy of entity list
     }
     
-    return result;
+    return std::vector<EntityId>();  // Empty vector if no entities in chunk
 }
 
 std::vector<EntityId> GetEntitiesInRadius(float grid_x, float grid_y, float radius) {

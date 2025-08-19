@@ -4,6 +4,7 @@
 #include "../world/entity.hpp"
 #include "../components/component_registry.hpp"
 #include "../systems/inventory_system.hpp"
+#include "../observer/observer.hpp"
 #include <unordered_map>
 #include <algorithm>
 #include <string>
@@ -388,6 +389,31 @@ static int L_inventory_get_item_count(lua_State* L) {
     return 1;
 }
 
+// === OBSERVER SYSTEM ===
+
+static int L_set_observer(lua_State* L) {
+    int32_t z = (int32_t)luaL_checkinteger(L, 1);
+    int32_t tx = (int32_t)luaL_checkinteger(L, 2);
+    int32_t ty = (int32_t)luaL_checkinteger(L, 3);
+    int32_t hot = (int32_t)luaL_checkinteger(L, 4);
+    int32_t warm = (int32_t)luaL_checkinteger(L, 5);
+    int32_t hotz = (int32_t)luaL_optinteger(L, 6, 0);
+    int32_t warmz = (int32_t)luaL_optinteger(L, 7, 1);
+    
+    lua_pushinteger(L, SetObserver(z, tx, ty, hot, warm, hotz, warmz));
+    return 1;
+}
+
+static int L_move_observer(lua_State* L) {
+    int32_t id = (int32_t)luaL_checkinteger(L, 1);
+    int32_t z = (int32_t)luaL_checkinteger(L, 2);
+    int32_t tx = (int32_t)luaL_checkinteger(L, 3);
+    int32_t ty = (int32_t)luaL_checkinteger(L, 4);
+    
+    MoveObserver(id, z, tx, ty);
+    return 0;
+}
+
 // === FLOOR MANAGEMENT ===
 
 static int L_set_current_floor(lua_State* L) {
@@ -431,6 +457,10 @@ static const luaL_Reg sim_functions[] = {
     {"inventory_create", L_inventory_create},
     {"inventory_add_items", L_inventory_add_items},
     {"inventory_get_item_count", L_inventory_get_item_count},
+    
+    // Observer system
+    {"set_observer", L_set_observer},
+    {"move_observer", L_move_observer},
     
     // Floor management
     {"set_current_floor", L_set_current_floor},
