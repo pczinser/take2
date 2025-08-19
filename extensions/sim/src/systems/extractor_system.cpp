@@ -1,16 +1,17 @@
 #include "../systems/extractor_system.hpp"
-#include "../world/entity.hpp"
-#include "../world/world.hpp"
+#include "../components/component_registry.hpp"
 #include "../systems/inventory_system.hpp"
 #include <cstdio>
 
 namespace simcore {
 
+using EntityId = components::EntityId;
+
 static ExtractorStats g_stats = {0, 0, 0};
 
 void Extractor_Init() {
     g_stats = {0, 0, 0};
-    printf("Extractor system initialized\n");
+    printf("Extractor system initialized (component-based)\n");
 }
 
 void Extractor_Clear() {
@@ -21,46 +22,40 @@ void Extractor_Step(float dt) {
     g_stats.total_extractors = 0;
     g_stats.active_extractors = 0;
     
-    const auto& entities = GetAllEntities();  // Can use const version now
-    for(auto& entity : const_cast<std::vector<Entity>&>(entities)) {  // Cast to non-const for systems
-        if(entity.category == "building" && entity.type == "extractor") {
+    // Query entities with production components (extractors have production components)
+    auto entities_with_production = components::g_production_components.GetEntitiesWithComponent();
+    
+    for(EntityId entity_id : entities_with_production) {
+        components::ProductionComponent* production = components::g_production_components.GetComponent(entity_id);
+        components::InventoryComponent* inventory = components::g_inventory_components.GetComponent(entity_id);
+        
+        // Check if this is an extractor (has extraction_rate > 0)
+        if(production && production->extraction_rate > 0.0f) {
             g_stats.total_extractors++;
             
-            // Check if extractor has required properties
-            auto rate_it = entity.properties.find("extraction_rate");
-            auto resource_it = entity.int_properties.find("target_resource");
-            
-            if(rate_it != entity.properties.end() && 
-               entity.properties.find("extraction_timer") != entity.properties.end() && 
-               resource_it != entity.int_properties.end()) {
-                
+            // Check if extractor has inventory for output
+            if(inventory && !inventory->inventory_ids.empty()) {
                 g_stats.active_extractors++;
                 
-                // Get properties
-                float rate = rate_it->second;
-                float& timer = entity.properties["extraction_timer"];  // Use [] for non-const access
-                int32_t target_resource = resource_it->second;
-                
-                // Update timer
-                timer += dt;
+                // Update extraction timer
+                production->extraction_timer += dt;
                 
                 // Extract every second (when timer >= 1.0)
-                if(timer >= 1.0f) {
-                    timer -= 1.0f;  // Reset timer
+                if(production->extraction_timer >= 1.0f) {
+                    production->extraction_timer -= 1.0f;  // Reset timer
                     
-                    // Check if extractor has inventories
-                    if(!entity.inventory_ids.empty()) {
-                        int32_t internal_storage_id = entity.inventory_ids[0];
-                        
-                        // Try to extract 1 resource (simplified for now)
-                        if(Inventory_GetFreeSpace(internal_storage_id) > 0) {
-                            bool success = Inventory_AddItems(internal_storage_id, (ItemType)target_resource, 1);
-                            if(success) {
-                                g_stats.total_resources_extracted++;
-                                printf("Extractor %d extracted 1 resource (type %d) to inventory %d\n", 
-                                       entity.id, target_resource, internal_storage_id);
-                            }
+                    // Try to extract to first inventory (output storage)
+                    int32_t output_inventory_id = inventory->inventory_ids[0];
+                    
+                    if(Inventory_GetFreeSpace(output_inventory_id) > 0) {
+                        bool success = Inventory_AddItems(output_inventory_id, (ItemType)production->target_resource, 1);
+                        if(success) {
+                            g_stats.total_resources_extracted++;
+                            printf("Extractor %d extracted 1 resource (type %d) to inventory %d\n", 
+                                   entity_id, production->target_resource, output_inventory_id);
                         }
+                    } else {
+                        printf("Extractor %d output inventory %d is full\n", entity_id, output_inventory_id);
                     }
                 }
             }

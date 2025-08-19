@@ -3,7 +3,7 @@
 #include "core/sim_time.hpp"
 #include "activation/activation.hpp"
 #include "world/world.hpp"
-#include "world/entity_new.hpp"
+#include "world/entity.hpp"
 #include "observer/observer.hpp"
 #include "systems/portal_system.hpp"
 #include "core/events.hpp"

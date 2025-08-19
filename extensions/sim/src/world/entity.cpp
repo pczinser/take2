@@ -1,5 +1,6 @@
-#include "entity.hpp"
+#include "entity_new.hpp"
 #include "world.hpp"
+#include "../systems/inventory_system.hpp"
 #include <unordered_map>
 #include <algorithm>
 #include <string>
@@ -8,182 +9,88 @@
 
 namespace simcore {
 
+// Entity storage
 static std::vector<Entity> g_entities;
-static int32_t g_next_entity_id = 1;
+static EntityId g_next_entity_id = 1;
 static std::unordered_map<std::string, EntityTemplate> g_entity_templates;
 
-// Map chunk coordinates to entity IDs
-static std::unordered_map<int64_t, std::vector<int32_t>> g_chunk_entities;
-
-// Current floor for floor-based queries
+// Current floor for queries
 static int32_t g_current_floor_z = 0;
 
-// Helper to pack chunk coordinates
-static inline int64_t PackChunkCoords(int32_t z, int32_t cx, int32_t cy) {
-    return ((int64_t)z << 32) | ((int64_t)cx << 16) | (int64_t)cy;
-}
+// === ENTITY MANAGEMENT ===
 
-// Revert to the working template-based implementation
-int32_t CreateEntity(const std::string& template_name, float grid_x, float grid_y, int32_t floor_z) {
+EntityId CreateEntity(const std::string& template_name, float grid_x, float grid_y, int32_t floor_z) {
     auto it = g_entity_templates.find(template_name);
     if(it == g_entity_templates.end()) {
-        printf("Unknown entity template: %s\n", template_name.c_str());
+        printf("ERROR: Unknown entity template: %s\n", template_name.c_str());
         return -1;
     }
     
-    const EntityTemplate& templ = it->second;  // This is now const
+    const EntityTemplate& templ = it->second;
     
     // Check if building can be placed (for buildings only)
-    if(templ.type == "building") {
-        if(!CanPlaceBuilding(floor_z, (int32_t)grid_x, (int32_t)grid_y, templ.width, templ.height)) {
+    if(templ.category == "building" && templ.components.has_building) {
+        if(!CanPlaceBuilding(floor_z, (int32_t)grid_x, (int32_t)grid_y, 
+                            templ.components.building_width, templ.components.building_height)) {
             printf("ERROR: Cannot place %s at grid (%.1f, %.1f) on floor %d\n", 
                    template_name.c_str(), grid_x, grid_y, floor_z);
             return -1;
         }
     }
     
-    // Check if the floor exists, create it if it doesn't
+    // Ensure floor exists
     Floor* floor = GetFloorByZ(floor_z);
     if(!floor) {
-        int32_t max_chunks = GetFloorMaxChunks(floor_z);
         int32_t chunks_w = (floor_z > 0) ? 2 : 4;
         int32_t chunks_h = (floor_z > 0) ? 2 : 4;
         SpawnFloorAtZ(floor_z, chunks_w, chunks_h, 32, 32);
-        printf("Auto-created floor %d with max %d chunks\n", floor_z, max_chunks);
+        printf("Auto-created floor %d\n", floor_z);
     }
     
-    Entity entity;
-    entity.id = g_next_entity_id++;
-    entity.category = templ.type;
-    entity.type = templ.type;
-    entity.name = template_name;
-    entity.grid_x = grid_x;
-    entity.grid_y = grid_y;
-    entity.chunk_x = (int32_t)(grid_x / 32.0f);
-    entity.chunk_y = (int32_t)(grid_y / 32.0f);
-    entity.floor_z = floor_z;
-    entity.width = templ.width;
-    entity.height = templ.height;
-    entity.properties = templ.properties;  // Copy from const template to mutable entity
-    entity.int_properties = templ.int_properties;  // Copy from const template to mutable entity
-    entity.inventory_ids = {};
-    entity.is_dirty = false;
+    // Create entity
+    EntityId entity_id = g_next_entity_id++;
+    Entity entity(entity_id, template_name, template_name);
+    
+    // Create components from template
+    CreateComponentsFromTemplate(entity_id, templ, grid_x, grid_y, floor_z);
     
     g_entities.push_back(entity);
     
-    // Add entity to ALL occupied chunks
-    auto occupied_chunks = GetBuildingOccupiedChunks((int32_t)grid_x, (int32_t)grid_y, templ.width, templ.height);
-    for(const auto& [chunk_x, chunk_y] : occupied_chunks) {
-        int64_t chunk_key = PackChunkCoords(floor_z, chunk_x, chunk_y);
-        g_chunk_entities[chunk_key].push_back(entity.id);
-    }
+    printf("Created entity %d (%s) at grid (%.1f, %.1f) on floor %d\n", 
+           entity_id, template_name.c_str(), grid_x, grid_y, floor_z);
     
-    printf("Created %s %d at grid (%.1f, %.1f) size %dx%d on floor %d\n", 
-           template_name.c_str(), entity.id, grid_x, grid_y, templ.width, templ.height, floor_z);
-    
-    return entity.id;
+    return entity_id;
 }
 
-Entity* GetEntity(int32_t id) {
+Entity* GetEntity(EntityId id) {
     for(auto& entity : g_entities) {
         if(entity.id == id) return &entity;
     }
     return nullptr;
 }
 
-void UpdateEntityChunk(Entity* entity, int32_t old_chunk_x, int32_t old_chunk_y) {
-    // Remove from old chunk
-    int64_t old_chunk_key = PackChunkCoords(entity->floor_z, old_chunk_x, old_chunk_y);
-    auto& old_chunk_entities = g_chunk_entities[old_chunk_key];
-    old_chunk_entities.erase(std::remove(old_chunk_entities.begin(), old_chunk_entities.end(), entity->id), old_chunk_entities.end());
+void DestroyEntity(EntityId id) {
+    // Remove all components
+    components::RemoveAllComponents(id);
     
-    // Add to new chunk
-    int64_t new_chunk_key = PackChunkCoords(entity->floor_z, entity->chunk_x, entity->chunk_y);
-    g_chunk_entities[new_chunk_key].push_back(entity->id);
+    // Remove entity
+    g_entities.erase(
+        std::remove_if(g_entities.begin(), g_entities.end(),
+                      [id](const Entity& e) { return e.id == id; }),
+        g_entities.end());
     
-    printf("Entity %d moved from chunk (%d, %d) to (%d, %d)\n", 
-           entity->id, old_chunk_x, old_chunk_y, entity->chunk_x, entity->chunk_y);
-}
-
-void MoveEntity(int32_t id, float dx, float dy) {
-    Entity* entity = GetEntity(id);
-    if(!entity) return;
-    
-    float new_grid_x = entity->grid_x + dx;
-    float new_grid_y = entity->grid_y + dy;
-    int32_t new_chunk_x = (int32_t)(new_grid_x / 32.0f);
-    int32_t new_chunk_y = (int32_t)(new_grid_y / 32.0f);
-    
-    // Check if new position is within chunk limits
-    if(!CanCreateChunkOnFloor(entity->floor_z, new_chunk_x, new_chunk_y)) {
-        printf("Entity %d movement blocked - would exceed floor %d chunk limits\n", 
-               entity->id, entity->floor_z);
-        return; // Block movement
-    }
-    
-    int32_t old_chunk_x = entity->chunk_x;
-    int32_t old_chunk_y = entity->chunk_y;
-    
-    entity->grid_x += dx;
-    entity->grid_y += dy;
-    entity->chunk_x = (int32_t)(entity->grid_x / 32.0f);
-    entity->chunk_y = (int32_t)(entity->grid_y / 32.0f);
-    
-    if(old_chunk_x != entity->chunk_x || old_chunk_y != entity->chunk_y) {
-        UpdateEntityChunk(entity, old_chunk_x, old_chunk_y);
-    }
-}
-
-void SetEntityPosition(int32_t id, float grid_x, float grid_y) {
-    Entity* entity = GetEntity(id);
-    if(!entity) return;
-    
-    int32_t old_chunk_x = entity->chunk_x;
-    int32_t old_chunk_y = entity->chunk_y;
-    
-    entity->grid_x = grid_x;
-    entity->grid_y = grid_y;
-    entity->chunk_x = (int32_t)(grid_x / 32.0f);
-    entity->chunk_y = (int32_t)(grid_y / 32.0f);
-    
-    if(old_chunk_x != entity->chunk_x || old_chunk_y != entity->chunk_y) {
-        UpdateEntityChunk(entity, old_chunk_x, old_chunk_y);
-    }
-}
-
-bool DoBuildingsOverlap(int32_t x1, int32_t y1, int32_t w1, int32_t h1,
-                       int32_t x2, int32_t y2, int32_t w2, int32_t h2) {
-    return !(x1 + w1 <= x2 || x2 + w2 <= x1 || y1 + h1 <= y2 || y2 + h2 <= y1);
-}
-
-std::vector<int32_t> GetEntitiesInChunk(int32_t z, int32_t chunk_x, int32_t chunk_y) {
-    int64_t chunk_key = PackChunkCoords(z, chunk_x, chunk_y);
-    auto it = g_chunk_entities.find(chunk_key);
-    if(it != g_chunk_entities.end()) {
-        return it->second;
-    }
-    return std::vector<int32_t>();
-}
-
-std::vector<int32_t> GetEntitiesInRadius(float grid_x, float grid_y, float radius) {
-    std::vector<int32_t> result;
-    for(const auto& entity : g_entities) {
-        float dx = entity.grid_x - grid_x;
-        float dy = entity.grid_y - grid_y;
-        float distance = sqrt(dx*dx + dy*dy);
-        if(distance <= radius) {
-            result.push_back(entity.id);
-        }
-    }
-    return result;
+    printf("Destroyed entity %d and all its components\n", id);
 }
 
 const std::vector<Entity>& GetAllEntities() {
     return g_entities;
 }
 
+// === TEMPLATE MANAGEMENT ===
+
 void RegisterEntityTemplate(const std::string& name, const EntityTemplate& templ) {
-    g_entity_templates[name] = templ;  // Copy the const template
+    g_entity_templates[name] = templ;
+    printf("Registered entity template: %s\n", name.c_str());
 }
 
 EntityTemplate* GetEntityTemplate(const std::string& name) {
@@ -191,94 +98,201 @@ EntityTemplate* GetEntityTemplate(const std::string& name) {
     return it != g_entity_templates.end() ? &it->second : nullptr;
 }
 
-// Floor management functions
-void SetCurrentFloor(int32_t floor_z) {
-    g_current_floor_z = floor_z;
-    printf("Switched to floor %d\n", floor_z);
+void ClearEntityTemplates() {
+    g_entity_templates.clear();
 }
 
-int32_t GetCurrentFloor() {
-    return g_current_floor_z;
+void RegisterDefaultEntityTemplates() {
+    // Player template
+    EntityTemplate player_template("Player", "player");
+    player_template.components.has_metadata = true;
+    player_template.components.metadata_display_name = "Player";
+    player_template.components.has_movement = true;
+    player_template.components.movement_speed = 50.0f;
+    player_template.components.has_health = true;
+    player_template.components.health_amount = 100;
+    player_template.components.has_inventory = true;
+    player_template.components.inventory_slots.push_back({0, 50}); // INVENTORY_PLAYER, capacity 50
+    RegisterEntityTemplate("player", player_template);
+    
+    // Building template
+    EntityTemplate building_template("Building", "building");
+    building_template.components.has_metadata = true;
+    building_template.components.metadata_display_name = "Building";
+    building_template.components.has_building = true;
+    building_template.components.building_width = 1;
+    building_template.components.building_height = 1;
+    building_template.components.building_type = "building";
+    building_template.components.has_health = true;
+    building_template.components.health_amount = 100;
+    RegisterEntityTemplate("building", building_template);
+    
+    printf("Registered default entity templates\n");
 }
 
-std::vector<int32_t> GetEntitiesOnFloor(int32_t floor_z) {
-    std::vector<int32_t> result;
-    for(const auto& entity : g_entities) {
-        if(entity.floor_z == floor_z) {
-            result.push_back(entity.id);
+// === COMPONENT CREATION ===
+
+void CreateComponentsFromTemplate(EntityId entity_id, const EntityTemplate& templ, float grid_x, float grid_y, int32_t floor_z) {
+    const auto& comp_data = templ.components;
+    
+    // Always create transform component
+    components::g_transform_components.AddComponent(entity_id, 
+        components::TransformComponent(grid_x, grid_y, floor_z));
+    
+    // Create metadata component
+    if(comp_data.has_metadata) {
+        components::g_metadata_components.AddComponent(entity_id, 
+            components::MetadataComponent(comp_data.metadata_display_name));
+    }
+    
+    // Create building component
+    if(comp_data.has_building) {
+        components::g_building_components.AddComponent(entity_id, 
+            components::BuildingComponent(comp_data.building_width, comp_data.building_height, comp_data.building_type));
+    }
+    
+    // Create movement component
+    if(comp_data.has_movement) {
+        components::g_movement_components.AddComponent(entity_id, 
+            components::MovementComponent(comp_data.movement_speed));
+    }
+    
+    // Create production component
+    if(comp_data.has_production) {
+        components::ProductionComponent prod_comp;
+        prod_comp.production_rate = comp_data.production_rate;
+        prod_comp.extraction_rate = comp_data.extraction_rate;
+        prod_comp.target_resource = comp_data.target_resource;
+        components::g_production_components.AddComponent(entity_id, prod_comp);
+    }
+    
+    // Create health component
+    if(comp_data.has_health) {
+        components::g_health_components.AddComponent(entity_id, 
+            components::HealthComponent(comp_data.health_amount));
+    }
+    
+    // Create inventory component and actual inventories
+    if(comp_data.has_inventory) {
+        std::vector<int32_t> inventory_ids;
+        for(const auto& slot : comp_data.inventory_slots) {
+            int32_t inv_id = Inventory_Create((InventoryType)slot.inventory_type, slot.capacity);
+            inventory_ids.push_back(inv_id);
+        }
+        components::g_inventory_components.AddComponent(entity_id, 
+            components::InventoryComponent(inventory_ids));
+    }
+    
+    printf("Created components for entity %d from template %s\n", entity_id, templ.display_name.c_str());
+}
+
+// === SPATIAL QUERIES (using components) ===
+
+std::vector<EntityId> GetEntitiesInChunk(int32_t z, int32_t chunk_x, int32_t chunk_y) {
+    std::vector<EntityId> result;
+    
+    // Query all entities with transform components
+    auto entities_with_transform = components::g_transform_components.GetEntitiesWithComponent();
+    
+    for(EntityId entity_id : entities_with_transform) {
+        components::TransformComponent* transform = components::g_transform_components.GetComponent(entity_id);
+        if(transform && transform->floor_z == z && 
+           transform->chunk_x == chunk_x && transform->chunk_y == chunk_y) {
+            result.push_back(entity_id);
         }
     }
+    
     return result;
 }
 
-void SetEntityFloor(int32_t id, int32_t floor_z) {
-    Entity* entity = GetEntity(id);
-    if(!entity) return;
+std::vector<EntityId> GetEntitiesInRadius(float grid_x, float grid_y, float radius) {
+    std::vector<EntityId> result;
     
-    int32_t old_floor_z = entity->floor_z;
-    entity->floor_z = floor_z;
+    auto entities_with_transform = components::g_transform_components.GetEntitiesWithComponent();
     
-    // Check if the new floor exists, create it if it doesn't
-    Floor* floor = GetFloorByZ(floor_z);
-    if(!floor) {
-        SpawnFloorAtZ(floor_z, 2, 2, 32, 32);
-        printf("Auto-created floor %d\n", floor_z);
-    }
-    
-    // Update chunk tracking for the new floor
-    int64_t old_chunk_key = PackChunkCoords(old_floor_z, entity->chunk_x, entity->chunk_y);
-    int64_t new_chunk_key = PackChunkCoords(floor_z, entity->chunk_x, entity->chunk_y);
-    
-    // Remove from old chunk
-    auto& old_chunk_entities = g_chunk_entities[old_chunk_key];
-    old_chunk_entities.erase(std::remove(old_chunk_entities.begin(), old_chunk_entities.end(), entity->id), old_chunk_entities.end());
-    
-    // Add to new chunk
-    g_chunk_entities[new_chunk_key].push_back(entity->id);
-    
-    printf("Entity %d moved from floor %d to floor %d\n", entity->id, old_floor_z, floor_z);
-}
-
-std::vector<std::pair<int32_t, int32_t>> GetBuildingOccupiedChunks(int32_t base_x, int32_t base_y, int32_t width, int32_t height) {
-    std::vector<std::pair<int32_t, int32_t>> chunks;
-    
-    // Calculate which chunks the building occupies
-    int32_t start_chunk_x = base_x / 32;
-    int32_t start_chunk_y = base_y / 32;
-    int32_t end_chunk_x = (base_x + width - 1) / 32;
-    int32_t end_chunk_y = (base_y + height - 1) / 32;
-    
-    for(int32_t cx = start_chunk_x; cx <= end_chunk_x; ++cx) {
-        for(int32_t cy = start_chunk_y; cy <= end_chunk_y; ++cy) {
-            chunks.push_back({cx, cy});
+    for(EntityId entity_id : entities_with_transform) {
+        components::TransformComponent* transform = components::g_transform_components.GetComponent(entity_id);
+        if(transform) {
+            float dx = transform->grid_x - grid_x;
+            float dy = transform->grid_y - grid_y;
+            float distance = sqrt(dx*dx + dy*dy);
+            if(distance <= radius) {
+                result.push_back(entity_id);
+            }
         }
     }
     
-    return chunks;
+    return result;
 }
+
+std::vector<EntityId> GetEntitiesOnFloor(int32_t floor_z) {
+    std::vector<EntityId> result;
+    
+    auto entities_with_transform = components::g_transform_components.GetEntitiesWithComponent();
+    
+    for(EntityId entity_id : entities_with_transform) {
+        components::TransformComponent* transform = components::g_transform_components.GetComponent(entity_id);
+        if(transform && transform->floor_z == floor_z) {
+            result.push_back(entity_id);
+        }
+    }
+    
+    return result;
+}
+
+std::vector<EntityId> GetEntitiesAtTile(int32_t floor_z, int32_t tile_x, int32_t tile_y) {
+    std::vector<EntityId> result;
+    
+    auto entities_with_transform = components::g_transform_components.GetEntitiesWithComponent();
+    
+    for(EntityId entity_id : entities_with_transform) {
+        components::TransformComponent* transform = components::g_transform_components.GetComponent(entity_id);
+        components::BuildingComponent* building = components::g_building_components.GetComponent(entity_id);
+        
+        if(transform && transform->floor_z == floor_z) {
+            int32_t entity_start_x = (int32_t)transform->grid_x;
+            int32_t entity_start_y = (int32_t)transform->grid_y;
+            int32_t entity_end_x = entity_start_x;
+            int32_t entity_end_y = entity_start_y;
+            
+            if(building) {
+                entity_end_x += building->width - 1;
+                entity_end_y += building->height - 1;
+            }
+            
+            if(tile_x >= entity_start_x && tile_x <= entity_end_x &&
+               tile_y >= entity_start_y && tile_y <= entity_end_y) {
+                result.push_back(entity_id);
+            }
+        }
+    }
+    
+    return result;
+}
+
+// === BUILDING PLACEMENT ===
 
 bool CanPlaceBuilding(int32_t floor_z, int32_t base_x, int32_t base_y, int32_t width, int32_t height) {
-    // Check if building fits within floor chunk limits
-    auto occupied_chunks = GetBuildingOccupiedChunks(base_x, base_y, width, height);
-    
-    for(const auto& [chunk_x, chunk_y] : occupied_chunks) {
-        if(!CanCreateChunkOnFloor(floor_z, chunk_x, chunk_y)) {
-            return false; // Building would exceed floor limits
-        }
+    // Check floor limits
+    if(!CanCreateChunkOnFloor(floor_z, base_x / 32, base_y / 32)) {
+        return false;
     }
     
-    // Check if any of the occupied chunks already have buildings that overlap
-    for(const auto& [chunk_x, chunk_y] : occupied_chunks) {
-        auto entities_in_chunk = GetEntitiesInChunk(floor_z, chunk_x, chunk_y);
-        for(int32_t entity_id : entities_in_chunk) {
-            Entity* existing_entity = GetEntity(entity_id);
-            if(existing_entity && existing_entity->category == "building") {
-                // Check if buildings overlap
-                if(DoBuildingsOverlap(base_x, base_y, width, height,
-                                     (int32_t)existing_entity->grid_x, (int32_t)existing_entity->grid_y,
-                                     existing_entity->width, existing_entity->height)) {
-                    return false; // Buildings overlap
-                }
+    // Check for overlapping buildings
+    auto entities_with_building = components::g_building_components.GetEntitiesWithComponent();
+    
+    for(EntityId entity_id : entities_with_building) {
+        components::TransformComponent* transform = components::g_transform_components.GetComponent(entity_id);
+        components::BuildingComponent* building = components::g_building_components.GetComponent(entity_id);
+        
+        if(transform && building && transform->floor_z == floor_z) {
+            int32_t existing_x = (int32_t)transform->grid_x;
+            int32_t existing_y = (int32_t)transform->grid_y;
+            
+            // Check overlap
+            if(!(base_x + width <= existing_x || existing_x + building->width <= base_x ||
+                 base_y + height <= existing_y || existing_y + building->height <= base_y)) {
+                return false; // Buildings overlap
             }
         }
     }
@@ -286,76 +300,46 @@ bool CanPlaceBuilding(int32_t floor_z, int32_t base_x, int32_t base_y, int32_t w
     return true;
 }
 
-std::vector<std::pair<int32_t, int32_t>> GetEntityOccupiedTiles(int32_t entity_id) {
-    std::vector<std::pair<int32_t, int32_t>> tiles;
+// === SYSTEM INITIALIZATION ===
+
+void InitializeEntitySystem() {
+    printf("Entity system: Initializing clean component-based entity system\n");
     
-    Entity* entity = GetEntity(entity_id);
-    if(!entity) return tiles;
+    g_entities.clear();
+    g_next_entity_id = 1;
+    g_entity_templates.clear();
+    g_current_floor_z = 0;
     
-    int32_t start_x = (int32_t)entity->grid_x;
-    int32_t start_y = (int32_t)entity->grid_y;
-    int32_t end_x = start_x + entity->width - 1;
-    int32_t end_y = start_y + entity->height - 1;
+    // Initialize component system
+    components::InitializeComponentSystem();
     
-    for(int32_t y = start_y; y <= end_y; ++y) {
-        for(int32_t x = start_x; x <= end_x; ++x) {
-            tiles.push_back({x, y});
-        }
-    }
+    // Register default templates
+    RegisterDefaultEntityTemplates();
     
-    return tiles;
+    printf("Entity system: Initialized successfully\n");
 }
 
-std::vector<std::pair<int32_t, int32_t>> GetEntityOccupiedChunks(int32_t entity_id) {
-    std::vector<std::pair<int32_t, int32_t>> chunks;
+void ClearEntitySystem() {
+    printf("Entity system: Clearing all entities and components\n");
     
-    Entity* entity = GetEntity(entity_id);
-    if(!entity) return chunks;
+    // Clear all components
+    components::ClearComponentSystem();
     
-    return GetBuildingOccupiedChunks((int32_t)entity->grid_x, (int32_t)entity->grid_y, entity->width, entity->height);
+    // Clear entities
+    g_entities.clear();
+    g_entity_templates.clear();
+    g_next_entity_id = 1;
 }
 
-std::vector<int32_t> GetEntitiesAtTile(int32_t floor_z, int32_t tile_x, int32_t tile_y) {
-    std::vector<int32_t> entities;
-    
-    // Get the chunk this tile belongs to
-    int32_t chunk_x = tile_x / 32;
-    int32_t chunk_y = tile_y / 32;
-    
-    // Get all entities in this chunk
-    auto chunk_entities = GetEntitiesInChunk(floor_z, chunk_x, chunk_y);
-    
-    // Check which entities actually occupy this specific tile
-    for(int32_t entity_id : chunk_entities) {
-        Entity* entity = GetEntity(entity_id);
-        if(entity && entity->floor_z == floor_z) {
-            int32_t entity_start_x = (int32_t)entity->grid_x;
-            int32_t entity_start_y = (int32_t)entity->grid_y;
-            int32_t entity_end_x = entity_start_x + entity->width - 1;
-            int32_t entity_end_y = entity_start_y + entity->height - 1;
-            
-            // Check if tile is within entity bounds
-            if(tile_x >= entity_start_x && tile_x <= entity_end_x &&
-               tile_y >= entity_start_y && tile_y <= entity_end_y) {
-                entities.push_back(entity_id);
-            }
-        }
-    }
-    
-    return entities;
+// === FLOOR MANAGEMENT ===
+
+void SetCurrentFloor(int32_t floor_z) {
+    g_current_floor_z = floor_z;
+    printf("Switched to floor %d\n", floor_z);
 }
 
-void RegisterDefaultEntityTemplates() {
-    // Register basic building template
-    EntityTemplate building_template;
-    building_template.type = "building";
-    building_template.width = 1;
-    building_template.height = 1;
-    building_template.properties["production_rate"] = 10.0;
-    building_template.int_properties["health"] = 100;
-    
-    RegisterEntityTemplate("building", building_template);
-    printf("Registered basic building template\n");
+int32_t GetCurrentFloor() {
+    return g_current_floor_z;
 }
 
 } // namespace simcore

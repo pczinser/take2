@@ -1,82 +1,107 @@
 #pragma once
 #include <cstdint>
 #include <string>
-#include <unordered_map>
 #include <vector>
+#include <unordered_map>
 #include "../components/component_registry.hpp"
 
 namespace simcore {
 
-// Forward declaration
-struct Tile;
+// Use the same EntityId type as components
+using EntityId = components::EntityId;
 
+// Clean EntityTemplate for pure component-based entities
 struct EntityTemplate {
-    std::string type;
-    int32_t width;
-    int32_t height;
-    std::unordered_map<std::string, float> properties;
-    std::unordered_map<std::string, int32_t> int_properties;
+    std::string display_name;     // Human-readable name for UI
+    std::string category;         // "building", "player", "transport", etc.
     
-    // Default constructor
-    EntityTemplate() : width(1), height(1) {}
+    // Component data specifications
+    struct ComponentData {
+        // Metadata component data
+        bool has_metadata = false;
+        std::string metadata_display_name;
+        
+        // Transform component data
+        bool has_transform = true;  // Almost all entities need transform
+        
+        // Building component data  
+        bool has_building = false;
+        int32_t building_width = 1;
+        int32_t building_height = 1;
+        std::string building_type;
+        
+        // Movement component data
+        bool has_movement = false;
+        float movement_speed = 0.0f;
+        
+        // Production component data
+        bool has_production = false;
+        float production_rate = 0.0f;
+        float extraction_rate = 0.0f;
+        int32_t target_resource = -1;
+        
+        // Health component data
+        bool has_health = false;
+        int32_t health_amount = 100;
+        
+        // Inventory component data
+        bool has_inventory = false;
+        struct InventorySlot {
+            int32_t inventory_type;  // InventoryType enum value
+            int32_t capacity;
+        };
+        std::vector<InventorySlot> inventory_slots;
+    };
     
-    // Constructor to initialize members
-    EntityTemplate(const std::string& t, int32_t w, int32_t h, 
-                   const std::unordered_map<std::string, float>& props,
-                   const std::unordered_map<std::string, int32_t>& int_props)
-        : type(t), width(w), height(h), properties(props), int_properties(int_props) {}
+    ComponentData components;
+    
+    EntityTemplate() = default;
+    EntityTemplate(const std::string& name, const std::string& cat) 
+        : display_name(name), category(cat) {}
 };
 
-// Add inventory support to Entity struct
+// Minimal Entity - just core identity, everything else in components
 struct Entity {
-    int32_t id;
-    std::string category;  // "building", "player", "transport"
-    std::string type;      // "extractor", "assembler", "storage"
-    std::string name;      // "stone_extractor_1", "player_main"
-    float grid_x, grid_y;  // Bottom-left corner (Defold coordinates)
-    int32_t chunk_x, chunk_y;  // Bottom-left chunk
-    int32_t floor_z;
-    int32_t width = 1, height = 1;  // Building size in grid cells
-    std::unordered_map<std::string, float> properties;
-    std::unordered_map<std::string, int32_t> int_properties;
-    std::vector<int32_t> inventory_ids;  // IDs of inventories owned by this entity
-    bool is_dirty = false;
+    EntityId id;
+    std::string name;           // For debugging/identification  
+    std::string template_name;  // Which template created this entity
+    bool is_dirty = false;     // For rendering system
+    
+    Entity() = default;
+    Entity(EntityId entity_id, const std::string& entity_name, const std::string& templ_name)
+        : id(entity_id), name(entity_name), template_name(templ_name) {}
 };
 
-// Entity management functions
-// Revert to the working template-based signature
-int32_t CreateEntity(const std::string& template_name, float grid_x, float grid_y, int32_t floor_z);
-Entity* GetEntity(int32_t id);
-void MoveEntity(int32_t id, float dx, float dy);
-void SetEntityPosition(int32_t id, float grid_x, float grid_y);
-void SetEntityFloor(int32_t id, int32_t floor_z);
+// === ENTITY MANAGEMENT ===
+EntityId CreateEntity(const std::string& template_name, float grid_x, float grid_y, int32_t floor_z);
+Entity* GetEntity(EntityId id);
+void DestroyEntity(EntityId id);  // Removes entity and all its components
 const std::vector<Entity>& GetAllEntities();
 
-// Template management
+// === TEMPLATE MANAGEMENT ===
 void RegisterEntityTemplate(const std::string& name, const EntityTemplate& templ);
 EntityTemplate* GetEntityTemplate(const std::string& name);
+void ClearEntityTemplates();
 void RegisterDefaultEntityTemplates();
 
-// Chunk-based entity management
-std::vector<int32_t> GetEntitiesInChunk(int32_t z, int32_t chunk_x, int32_t chunk_y);
-std::vector<int32_t> GetEntitiesInRadius(float grid_x, float grid_y, float radius);
-std::vector<int32_t> GetEntitiesOnFloor(int32_t floor_z);
+// === COMPONENT CREATION ===
+void CreateComponentsFromTemplate(EntityId entity_id, const EntityTemplate& templ, float grid_x, float grid_y, int32_t floor_z);
 
-// Building placement functions
+// === SPATIAL QUERIES (using components) ===
+std::vector<EntityId> GetEntitiesInChunk(int32_t z, int32_t chunk_x, int32_t chunk_y);
+std::vector<EntityId> GetEntitiesInRadius(float grid_x, float grid_y, float radius);
+std::vector<EntityId> GetEntitiesOnFloor(int32_t floor_z);
+std::vector<EntityId> GetEntitiesAtTile(int32_t floor_z, int32_t tile_x, int32_t tile_y);
+
+// === BUILDING PLACEMENT ===
 bool CanPlaceBuilding(int32_t floor_z, int32_t base_x, int32_t base_y, int32_t width, int32_t height);
-std::vector<std::pair<int32_t, int32_t>> GetBuildingOccupiedChunks(int32_t base_x, int32_t base_y, int32_t width, int32_t height);
-std::vector<std::pair<int32_t, int32_t>> GetEntityOccupiedTiles(int32_t entity_id);
-std::vector<std::pair<int32_t, int32_t>> GetEntityOccupiedChunks(int32_t entity_id);
-std::vector<int32_t> GetEntitiesAtTile(int32_t floor_z, int32_t tile_x, int32_t tile_y);
 
-// Floor management
+// === SYSTEM INITIALIZATION ===
+void InitializeEntitySystem();
+void ClearEntitySystem();
+
+// === FLOOR MANAGEMENT ===
 void SetCurrentFloor(int32_t floor_z);
 int32_t GetCurrentFloor();
-
-void UpdateEntityChunk(Entity* entity, int32_t old_chunk_x, int32_t old_chunk_y);
-
-// Component creation from templates (Phase 2 migration support)
-void CreateComponentsFromTemplate(int32_t entity_id, const std::string& template_name, float grid_x, float grid_y, int32_t floor_z);
-void CreateComponentsFromEntity(int32_t entity_id, const Entity& entity);
 
 } // namespace simcore
