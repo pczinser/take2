@@ -125,30 +125,51 @@ end
 function init(self)
     msg.post(".", "acquire_input_focus")
     
-    -- Register the player entity template (THIS WAS WORKING)
+    -- Register entity templates using new component format
     local entity_templates = {
         player = {
-            type = "player",
-            properties = {
-                move_speed = 100.0,
-                health = 100.0,
-                max_health = 100.0
-            },
-            int_properties = {
-                inventory_size = 50
+            display_name = "Player",
+            category = "player",
+            components = {
+                metadata = {
+                    display_name = "Player Character"
+                },
+                movement = {
+                    move_speed = 50.0  -- Grid units per second
+                },
+                health = {
+                    health_amount = 100
+                },
+                inventory = {
+                    slots = {
+                        { type = 0, capacity = 50 }  -- INVENTORY_PLAYER
+                    }
+                }
             }
         },
         
         building = {
-            type = "building",
-            properties = { production_rate = 10.0 },
-            int_properties = { health = 100 }
+            display_name = "Building",
+            category = "building",
+            components = {
+                metadata = {
+                    display_name = "Basic Building"
+                },
+                building = {
+                    width = 1,
+                    height = 1,
+                    building_type = "building"
+                },
+                health = {
+                    health_amount = 100
+                }
+            }
         }
     }
     
     sim.register_entity_templates(entity_templates)
     
-    -- Create the player entity in the simulation (grid coordinates) - THIS WAS WORKING
+    -- Create the player entity in the simulation (grid coordinates)
     self.player_id = sim.create_entity("player", 0, 0, 0)  -- Grid (0, 0) on floor 0
     print("Created player with ID: " .. self.player_id)
     
@@ -156,9 +177,7 @@ function init(self)
     self.building_id = sim.create_entity("building", 1, 1, 0)  -- Grid (1, 1) on floor 0
     print("Created building with ID: " .. self.building_id .. " at grid (1, 1) on floor 0")
     
-    -- Create player inventory
-    local inventory_id = sim.inventory_create(0, 20)  -- 0 = INVENTORY_PLAYER
-    sim.assign_inventory_to_entity(inventory_id, self.player_id)
+    -- Inventory is now created automatically from template components
     
     -- Create an observer for the player
     self.observer_id = sim.set_observer(0, 0, 0, 32, 64, 0, 1)
@@ -179,31 +198,39 @@ function init(self)
 end
 
 function update(self, dt)
-    -- Move player in simulation based on input state
+    -- Set player velocity based on input state (using new movement system)
     if self.move_dx ~= 0 or self.move_dy ~= 0 then
-        local player = sim.get_entity(self.player_id)
-        if player then
-            local move_speed = player.properties.move_speed
-            -- Convert world movement to grid movement
-            local grid_dx = (self.move_dx * move_speed * dt) / 64.0  -- CHANGED: Convert to grid movement
-            local grid_dy = (self.move_dy * move_speed * dt) / 64.0  -- CHANGED: Convert to grid movement
-            sim.move_entity(self.player_id, grid_dx, grid_dy)
+        -- Get movement component to check speed
+        local movement = sim.get_entity_movement(self.player_id)
+        if movement then
+            -- Normalize movement direction and apply speed
+            local length = math.sqrt(self.move_dx * self.move_dx + self.move_dy * self.move_dy)
+            local norm_dx = self.move_dx / length
+            local norm_dy = self.move_dy / length
             
-            -- Update observer position to follow player
-            sim.move_observer(self.observer_id, 0, player.grid_x, player.grid_y)  -- CHANGED: grid coordinates
+            -- Set velocity (MovementSystem will handle actual movement each frame)
+            sim.set_entity_velocity(self.player_id, norm_dx, norm_dy)
         end
+    else
+        -- Stop player when no input
+        sim.stop_entity(self.player_id)
     end
     
     -- Update Defold game object position from simulation
-    local player = sim.get_entity(self.player_id)
-    if player then
-        local world_x, world_y = grid_to_world(player.grid_x, player.grid_y)  -- CHANGED: Convert grid to world
+    local transform = sim.get_entity_transform(self.player_id)
+    if transform then
+        local world_x, world_y = grid_to_world(transform.grid_x, transform.grid_y)
         
         -- Only update if position changed (avoid unnecessary go.set_position calls)
         if world_x ~= self.last_x or world_y ~= self.last_y then
             go.set_position(vmath.vector3(world_x, world_y, 0), self.id)
             self.last_x = world_x
             self.last_y = world_y
+            
+            -- Update observer to follow player
+            if self.observer_id then
+                sim.move_observer(self.observer_id, 0, transform.grid_x, transform.grid_y)
+            end
         end
     end
 end
@@ -239,26 +266,27 @@ function on_input(self, action_id, action)
             self.move_dx = self.move_dx - 1
         end
     elseif action_id == hash("key_p") and action.pressed then
-        -- Debug output
-        local player = sim.get_entity(self.player_id)
-        if player then
-            local world_x, world_y = grid_to_world(player.grid_x, player.grid_y)  -- CHANGED: Convert grid to world
-            print(string.format("Player at world: (%.1f, %.1f) grid: (%.1f, %.1f) floor: %d", 
-                               world_x, world_y, player.grid_x, player.grid_y, player.floor_z))
+        -- Debug output using component system
+        local transform = sim.get_entity_transform(self.player_id)
+        local metadata = sim.get_entity_metadata(self.player_id)
+        if transform and metadata then
+            local world_x, world_y = grid_to_world(transform.grid_x, transform.grid_y)
+            print(string.format("%s at world: (%.1f, %.1f) grid: (%.1f, %.1f) floor: %d", 
+                               metadata.display_name, world_x, world_y, transform.grid_x, transform.grid_y, transform.floor_z))
         end
     elseif action_id == hash("key_t") and action.pressed then
         -- Test chunk state
         test_chunk_state(self.player_id, self.building_id)
     elseif action_id == hash("key_r") and action.pressed then
-        -- Teleport player back to building (grid coordinates AND floor)
-        local building = sim.get_entity(self.building_id)
-        if building then
-            sim.set_entity_position(self.player_id, building.grid_x, building.grid_y)
-            sim.set_entity_floor(self.player_id, building.floor_z)
-            self.current_floor = building.floor_z
-            sim.set_current_floor(building.floor_z)
+        -- Teleport player back to building using component system
+        local building_transform = sim.get_entity_transform(self.building_id)
+        if building_transform then
+            sim.set_entity_position(self.player_id, building_transform.grid_x, building_transform.grid_y)
+            sim.set_entity_floor(self.player_id, building_transform.floor_z)
+            self.current_floor = building_transform.floor_z
+            sim.set_current_floor(building_transform.floor_z)
             print(string.format("Teleported player to building at grid (%.1f, %.1f) on floor %d", 
-                               building.grid_x, building.grid_y, building.floor_z))
+                               building_transform.grid_x, building_transform.grid_y, building_transform.floor_z))
         else
             print("ERROR: Building not found!")
         end
