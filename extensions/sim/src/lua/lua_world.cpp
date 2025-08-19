@@ -4,6 +4,7 @@
 #include "../world/entity.hpp"
 #include "../components/component_registry.hpp"
 #include "../systems/inventory_system.hpp"
+#include "../systems/movement_system.hpp"
 #include "../observer/observer.hpp"
 #include <unordered_map>
 #include <algorithm>
@@ -147,49 +148,37 @@ static int L_move_entity(lua_State* L) {
     float dx = (float)luaL_checknumber(L, 2);
     float dy = (float)luaL_checknumber(L, 3);
     
+    // Get current position and move relative to it
     components::TransformComponent* transform = components::g_transform_components.GetComponent(entity_id);
-    if (!transform) {
-        return 0;  // Entity has no transform component
-    }
-    
-    // Calculate new position
-    float new_x = transform->grid_x + dx;
-    float new_y = transform->grid_y + dy;
-    int32_t new_chunk_x = (int32_t)(new_x / 32.0f);
-    int32_t new_chunk_y = (int32_t)(new_y / 32.0f);
-    
-    // Check if new position is valid (within floor limits)
-    if (!CanCreateChunkOnFloor(transform->floor_z, new_chunk_x, new_chunk_y)) {
-        printf("Entity %d movement blocked - would exceed floor %d chunk limits\n", 
-               entity_id, transform->floor_z);
-        return 0;  // Block movement
-    }
-    
-    // Store old position for chunk mapping update
-    int32_t old_chunk_x = transform->chunk_x;
-    int32_t old_chunk_y = transform->chunk_y;
-    int32_t old_floor_z = transform->floor_z;
-    
-    // Update transform component
-    transform->grid_x = new_x;
-    transform->grid_y = new_y;
-    transform->chunk_x = new_chunk_x;
-    transform->chunk_y = new_chunk_y;
-    
-    // Mark entity as dirty for rendering
-    Entity* entity = GetEntity(entity_id);
-    if (entity) {
-        entity->is_dirty = true;
-    }
-    
-    // Update chunk mapping if entity moved to different chunk
-    if (old_chunk_x != new_chunk_x || old_chunk_y != new_chunk_y) {
-        UpdateEntityChunkMapping(entity_id, old_chunk_x, old_chunk_y, old_floor_z);
-        printf("Entity %d moved from chunk (%d, %d) to (%d, %d)\n", 
-               entity_id, old_chunk_x, old_chunk_y, new_chunk_x, new_chunk_y);
+    if (transform) {
+        float new_x = transform->grid_x + dx;
+        float new_y = transform->grid_y + dy;
+        Movement_TeleportEntity(entity_id, new_x, new_y);
     }
     
     return 0;
+}
+
+static int L_set_entity_velocity(lua_State* L) {
+    EntityId entity_id = (EntityId)luaL_checkinteger(L, 1);
+    float dx = (float)luaL_checknumber(L, 2);
+    float dy = (float)luaL_checknumber(L, 3);
+    
+    Movement_SetVelocity(entity_id, dx, dy);
+    return 0;
+}
+
+static int L_stop_entity(lua_State* L) {
+    EntityId entity_id = (EntityId)luaL_checkinteger(L, 1);
+    Movement_StopEntity(entity_id);
+    return 0;
+}
+
+static int L_is_entity_moving(lua_State* L) {
+    EntityId entity_id = (EntityId)luaL_checkinteger(L, 1);
+    bool is_moving = Movement_IsMoving(entity_id);
+    lua_pushboolean(L, is_moving);
+    return 1;
 }
 
 static int L_set_entity_position(lua_State* L) {
@@ -197,33 +186,7 @@ static int L_set_entity_position(lua_State* L) {
     float grid_x = (float)luaL_checknumber(L, 2);
     float grid_y = (float)luaL_checknumber(L, 3);
     
-    components::TransformComponent* transform = components::g_transform_components.GetComponent(entity_id);
-    if (!transform) {
-        return 0;  // Entity has no transform component
-    }
-    
-    // Store old position for chunk mapping update
-    int32_t old_chunk_x = transform->chunk_x;
-    int32_t old_chunk_y = transform->chunk_y;
-    int32_t old_floor_z = transform->floor_z;
-    
-    // Update position
-    transform->grid_x = grid_x;
-    transform->grid_y = grid_y;
-    transform->chunk_x = (int32_t)(grid_x / 32.0f);
-    transform->chunk_y = (int32_t)(grid_y / 32.0f);
-    
-    // Mark entity as dirty for rendering
-    Entity* entity = GetEntity(entity_id);
-    if (entity) {
-        entity->is_dirty = true;
-    }
-    
-    // Update chunk mapping if entity moved to different chunk
-    if (old_chunk_x != transform->chunk_x || old_chunk_y != transform->chunk_y) {
-        UpdateEntityChunkMapping(entity_id, old_chunk_x, old_chunk_y, old_floor_z);
-    }
-    
+    Movement_TeleportEntity(entity_id, grid_x, grid_y);
     return 0;
 }
 
@@ -231,38 +194,7 @@ static int L_set_entity_floor(lua_State* L) {
     EntityId entity_id = (EntityId)luaL_checkinteger(L, 1);
     int32_t floor_z = (int32_t)luaL_checkinteger(L, 2);
     
-    components::TransformComponent* transform = components::g_transform_components.GetComponent(entity_id);
-    if (!transform) {
-        return 0;  // Entity has no transform component
-    }
-    
-    // Store old position for chunk mapping update
-    int32_t old_chunk_x = transform->chunk_x;
-    int32_t old_chunk_y = transform->chunk_y;
-    int32_t old_floor_z = transform->floor_z;
-    
-    // Update floor
-    transform->floor_z = floor_z;
-    
-    // Ensure target floor exists
-    Floor* floor = GetFloorByZ(floor_z);
-    if (!floor) {
-        int32_t chunks_w = (floor_z > 0) ? 2 : 4;
-        int32_t chunks_h = (floor_z > 0) ? 2 : 4;
-        SpawnFloorAtZ(floor_z, chunks_w, chunks_h, 32, 32);
-        printf("Auto-created floor %d\n", floor_z);
-    }
-    
-    // Mark entity as dirty for rendering
-    Entity* entity = GetEntity(entity_id);
-    if (entity) {
-        entity->is_dirty = true;
-    }
-    
-    // Update chunk mapping (floor changed)
-    UpdateEntityChunkMapping(entity_id, old_chunk_x, old_chunk_y, old_floor_z);
-    
-    printf("Entity %d moved from floor %d to floor %d\n", entity_id, old_floor_z, floor_z);
+    Movement_ChangeFloor(entity_id, floor_z);
     return 0;
 }
 
@@ -540,6 +472,11 @@ static const luaL_Reg sim_functions[] = {
     {"move_entity", L_move_entity},
     {"set_entity_position", L_set_entity_position},
     {"set_entity_floor", L_set_entity_floor},
+    
+    // Movement system functions
+    {"set_entity_velocity", L_set_entity_velocity},
+    {"stop_entity", L_stop_entity},
+    {"is_entity_moving", L_is_entity_moving},
     
     // Component access functions
     {"get_entity_metadata", L_get_entity_metadata},
