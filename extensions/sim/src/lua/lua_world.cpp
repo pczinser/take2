@@ -12,6 +12,12 @@
 #include "../systems/inventory_system.hpp"
 
 namespace simcore {
+
+// Forward declarations for helper functions
+EntityTemplate CreateTemplateFromLua(lua_State* L, int table_index);
+void ReadPropertiesFromLua(lua_State* L, int table_index, std::unordered_map<std::string, float>& properties);
+void ReadIntPropertiesFromLua(lua_State* L, int table_index, std::unordered_map<std::string, int32_t>& int_properties);
+
 static int L_spawn_floor_at_z(lua_State* L){
     int32_t z=(int32_t)luaL_checkinteger(L,1);
     int32_t cw=(int32_t)luaL_checkinteger(L,2);
@@ -188,6 +194,34 @@ EntityTemplate CreateTemplateFromLua(lua_State* L, int table_index) {
     lua_pop(L, 1);
     
     return EntityTemplate(type, width, height, properties, int_properties);
+}
+
+// Helper function to read properties table from Lua
+void ReadPropertiesFromLua(lua_State* L, int table_index, std::unordered_map<std::string, float>& properties) {
+    lua_pushnil(L);  // First key
+    while(lua_next(L, table_index) != 0) {
+        // Key is at index -2, value is at index -1
+        if(lua_isstring(L, -2) && lua_isnumber(L, -1)) {
+            const char* key = lua_tostring(L, -2);
+            float value = (float)lua_tonumber(L, -1);
+            properties[key] = value;
+        }
+        lua_pop(L, 1);  // Remove value, keep key for next iteration
+    }
+}
+
+// Helper function to read int_properties table from Lua
+void ReadIntPropertiesFromLua(lua_State* L, int table_index, std::unordered_map<std::string, int32_t>& int_properties) {
+    lua_pushnil(L);  // First key
+    while(lua_next(L, table_index) != 0) {
+        // Key is at index -2, value is at index -1
+        if(lua_isstring(L, -2) && lua_isnumber(L, -1)) {
+            const char* key = lua_tostring(L, -2);
+            int32_t value = (int32_t)lua_tointeger(L, -1);
+            int_properties[key] = value;
+        }
+        lua_pop(L, 1);  // Remove value, keep key for next iteration
+    }
 }
 
 static int L_get_entities_in_chunk(lua_State* L) {
