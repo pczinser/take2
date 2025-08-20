@@ -125,85 +125,115 @@ end
 function init(self)
     msg.post(".", "acquire_input_focus")
     
-    -- Register the player entity template (THIS WAS WORKING)
-    local entity_templates = {
-        player = {
-            type = "player",
-            properties = {
-                move_speed = 100.0,
-                health = 100.0,
-                max_health = 100.0
-            },
-            int_properties = {
-                inventory_size = 50
-            }
-        },
-        
-        building = {
-            type = "building",
-            properties = { production_rate = 10.0 },
-            int_properties = { health = 100 }
-        }
-    }
-    
-    sim.register_entity_templates(entity_templates)
-    
-    -- Create the player entity in the simulation (grid coordinates) - THIS WAS WORKING
-    self.player_id = sim.create_entity("player", 0, 0, 0)  -- Grid (0, 0) on floor 0
-    print("Created player with ID: " .. self.player_id)
-    
-    -- Create a building at a fixed position (grid coordinates) on floor 0
-    self.building_id = sim.create_entity("building", 1, 1, 0)  -- Grid (1, 1) on floor 0
-    print("Created building with ID: " .. self.building_id .. " at grid (1, 1) on floor 0")
-    
-    -- Create player inventory
-    local inventory_id = sim.inventory_create(0, 20)  -- 0 = INVENTORY_PLAYER
-    sim.assign_inventory_to_entity(inventory_id, self.player_id)
-    
-    -- Create an observer for the player
-    self.observer_id = sim.set_observer(0, 0, 0, 32, 64, 0, 1)
-    print("Created observer with ID: " .. self.observer_id)
-    
-    -- Store the initial position
-    self.last_x = 0
-    self.last_y = 0
-    
-    -- Movement state
+    -- Initialize movement variables
     self.move_dx = 0
     self.move_dy = 0
     
-    -- Current floor
+    -- Initialize floor tracking
     self.current_floor = 0
     
-    print("=== BUILDING TEST SCRIPT INITIALIZED ===")
+    -- Register entity prototypes using new inventory system
+    local entity_prototypes = {
+        player = {
+            components = {
+                metadata = {
+                    display_name = "Player",
+                    category = "player"
+                },
+                transform = {
+                    move_speed = 100.0
+                },
+                health = {
+                    amount = 100
+                },
+                inventory = {
+                    slots = {
+                        -- 50 general slots for player
+                        { is_output = false, whitelist = {} },  -- Slot 1
+                        { is_output = false, whitelist = {} },  -- Slot 2
+                        -- ... repeat for 50 slots
+                    }
+                }
+            }
+        },
+        
+        crafting_building = {
+            components = {
+                metadata = {
+                    display_name = "Crafting Building",
+                    category = "building"
+                },
+                transform = {
+                    move_speed = 0.0
+                },
+                building = {
+                    width = 1,
+                    height = 1,
+                    type = "crafting"
+                },
+                production = {
+                    rate = 10.0
+                },
+                health = {
+                    amount = 100
+                },
+                inventory = {
+                    slots = {
+                        { is_output = false, whitelist = {0, 2} },  -- Input slot (stone, wood)
+                        { is_output = false, whitelist = {1} },      -- Input slot (iron)
+                        { is_output = true, whitelist = {7} }        -- Output slot (cut stone)
+                    }
+                }
+            }
+        }
+    }
+    
+    sim.register_entity_prototypes(entity_prototypes)
+    
+    -- Create the player entity from prototype
+    self.player_id = sim.create_entity("player", 0, 0, 0)
+    print("Created player with ID: " .. self.player_id)
+    
+    -- Create a crafting building from prototype
+    self.crafting_id = sim.create_entity("crafting_building", 1, 1, 0)
+    print("Created crafting building with ID: " .. self.crafting_id)
+    
+    -- Create observer for the player
+    self.observer_id = sim.set_observer(0, 0, 0, 10, 5, 0, 1)
+    
+    print("=== NEW INVENTORY SYSTEM INITIALIZED ===")
 end
 
 function update(self, dt)
-    -- Move player in simulation based on input state
+    -- Simple grid-based movement using transform component
     if self.move_dx ~= 0 or self.move_dy ~= 0 then
-        local player = sim.get_entity(self.player_id)
-        if player then
-            local move_speed = player.properties.move_speed
-            -- Convert world movement to grid movement
-            local grid_dx = (self.move_dx * move_speed * dt) / 64.0  -- CHANGED: Convert to grid movement
-            local grid_dy = (self.move_dy * move_speed * dt) / 64.0  -- CHANGED: Convert to grid movement
-            sim.move_entity(self.player_id, grid_dx, grid_dy)
+        local transform = sim.get_entity_transform(self.player_id)
+        if transform then
+            -- Get movement speed from transform component
+            local move_speed = transform.movement_speed or 100.0
             
-            -- Update observer position to follow player
-            sim.move_observer(self.observer_id, 0, player.grid_x, player.grid_y)  -- CHANGED: grid coordinates
+            -- Calculate grid movement (slower, more controlled)
+            local grid_dx = (self.move_dx * move_speed * dt) / 64.0
+            local grid_dy = (self.move_dy * move_speed * dt) / 64.0
+            
+            -- Move entity directly (no velocity system)
+            sim.move_entity(self.player_id, grid_dx, grid_dy)
         end
     end
     
-    -- Update Defold game object position from simulation
-    local player = sim.get_entity(self.player_id)
-    if player then
-        local world_x, world_y = grid_to_world(player.grid_x, player.grid_y)  -- CHANGED: Convert grid to world
+    -- Update Defold position from simulation
+    local transform = sim.get_entity_transform(self.player_id)
+    if transform then
+        local world_x, world_y = grid_to_world(transform.grid_x, transform.grid_y)
         
-        -- Only update if position changed (avoid unnecessary go.set_position calls)
+        -- Only update if position changed
         if world_x ~= self.last_x or world_y ~= self.last_y then
             go.set_position(vmath.vector3(world_x, world_y, 0), self.id)
             self.last_x = world_x
             self.last_y = world_y
+            
+            -- Update observer
+            sim.move_observer(self.observer_id, 0, transform.grid_x, transform.grid_y)
         end
     end
 end
@@ -248,10 +278,10 @@ function on_input(self, action_id, action)
         end
     elseif action_id == hash("key_t") and action.pressed then
         -- Test chunk state
-        test_chunk_state(self.player_id, self.building_id)
+        test_chunk_state(self.player_id, self.crafting_id)
     elseif action_id == hash("key_r") and action.pressed then
         -- Teleport player back to building (grid coordinates AND floor)
-        local building = sim.get_entity(self.building_id)
+        local building = sim.get_entity(self.crafting_id)
         if building then
             sim.set_entity_position(self.player_id, building.grid_x, building.grid_y)
             sim.set_entity_floor(self.player_id, building.floor_z)

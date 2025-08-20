@@ -19,8 +19,8 @@ embedded_instances {
 embedded_instances {
   id: "debug"
   data: "components {\n"
-  "  id: \"building_test\"\n"
-  "  component: \"/game/scripts/building_test.script\"\n"
+  "  id: \"component_system_test\"\n"
+  "  component: \"/game/scripts/component_system_test.script\"\n"
   "}\n"
   ""
 }
