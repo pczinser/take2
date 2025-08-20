@@ -1,17 +1,111 @@
+-- Attached to world_manager game object
+local world = require("game.scripts.world")
+
+local world_manager = {
+    loaded_chunks = {},  -- Track which chunks are loaded
+    observer_config = nil
+}
+
 function init(self)
-	-- Add initialization code here
-	-- Learn more: https://defold.com/manuals/script/
-	-- Remove this function if not needed
+    -- Get observer configuration from simulation
+    self.observer_config = world.get_observer_config()
+    
+    if self.observer_config then
+        print("World manager initialized - Hot radius: " .. self.observer_config.hot_chunk_radius .. " chunks")
+    end
+    
+    -- Load initial chunks
+    load_active_chunks()
+end
+
+function update(self, dt)
+    -- Check for new chunks to load
+    load_active_chunks()
+end
+
+-- Only spawn visual chunks for hot chunks
+function load_active_chunks()
+    local visual_chunks = world.get_visual_chunks(0)  -- Only hot chunks
+    
+    -- Create a set of chunks that should be loaded
+    local should_load_chunks = {}
+    for _, chunk_data in ipairs(visual_chunks) do
+        local chunk_key = string.format("%d_%d_%d", chunk_data.floor_z, chunk_data.chunk_x, chunk_data.chunk_y)
+        should_load_chunks[chunk_key] = true
+    end
+    
+    -- Unload chunks that are no longer needed
+    for chunk_key, chunk_data in pairs(world_manager.loaded_chunks) do
+        if not should_load_chunks[chunk_key] then
+            unload_chunk(chunk_key)
+        end
+    end
+    
+    -- Load new chunks that aren't already loaded
+    for _, chunk_data in ipairs(visual_chunks) do
+        local chunk_key = string.format("%d_%d_%d", chunk_data.floor_z, chunk_data.chunk_x, chunk_data.chunk_y)
+        
+        if not world_manager.loaded_chunks[chunk_key] then
+            -- Spawn chunk collection
+            local chunk_ids = collectionfactory.create("#chunk_factory")
+            
+            -- Find the tilemap game object in the spawned collection
+            local tilemap_id = chunk_ids[hash("/tilemap")]
+            
+            if tilemap_id then
+                -- Extract collection root ID from tilemap path
+                local collection_root_id = get_collection_root_id(tilemap_id)
+                
+                if collection_root_id then
+                    -- Send chunk data via message to the tilemap
+                    msg.post(tilemap_id, "set_chunk_data", {
+                        floor_z = chunk_data.floor_z,
+                        chunk_x = chunk_data.chunk_x,
+                        chunk_y = chunk_data.chunk_y
+                    })
+                    
+                    world_manager.loaded_chunks[chunk_key] = {
+                        collection_ids = chunk_ids,
+                        tilemap_id = tilemap_id,
+                        collection_root_id = collection_root_id
+                    }
+                else
+                    print("ERROR: Could not extract collection root ID from tilemap: " .. tostring(tilemap_id))
+                end
+            else
+                print("ERROR: Could not find tilemap in spawned chunk collection")
+            end
+        end
+    end
+end
+
+function unload_chunk(chunk_key)
+    local chunk_data = world_manager.loaded_chunks[chunk_key]
+    if chunk_data then
+        -- Unload the collection factory resources
+        collectionfactory.unload("#chunk_factory")
+        
+        -- Clean up our tracking
+        world_manager.loaded_chunks[chunk_key] = nil
+    else
+        -- Clean up the invalid entry
+        world_manager.loaded_chunks[chunk_key] = nil
+    end
+end
+
+-- Helper function to get collection root ID from tilemap ID
+function get_collection_root_id(tilemap_id)
+    local tilemap_path = tostring(tilemap_id)
+    -- Extract collection name from path like "/collection0/tilemap"
+    local collection_name = string.match(tilemap_path, "/([^/]+)/")
+    if collection_name then
+        return hash("/" .. collection_name)
+    end
+    return nil
 end
 
 function final(self)
 	-- Add finalization code here
-	-- Learn more: https://defold.com/manuals/script/
-	-- Remove this function if not needed
-end
-
-function update(self, dt)
-	-- Add update code here
 	-- Learn more: https://defold.com/manuals/script/
 	-- Remove this function if not needed
 end

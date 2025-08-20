@@ -233,7 +233,7 @@ function init(self)
             sim.inventory_add_to_slot(self.player_id, 2, 3, 10) -- 10 wood to slot 2
             
             -- Create observer for the player
-            self.observer_id = sim.set_observer(0, 0, 0, 10, 5, 0, 1)
+            self.observer_id = sim.set_observer(0, 0, 0, 1, 2, 0, 1)
             
             print("=== PLAYER CONTROLLER READY ===")
         else

@@ -504,25 +504,132 @@ static int L_register_entity_prototypes(lua_State* L) {
 
 static int L_set_observer(lua_State* L) {
     int32_t z = (int32_t)luaL_checkinteger(L, 1);
-    int32_t tx = (int32_t)luaL_checkinteger(L, 2);
-    int32_t ty = (int32_t)luaL_checkinteger(L, 3);
-    int32_t hot = (int32_t)luaL_checkinteger(L, 4);
-    int32_t warm = (int32_t)luaL_checkinteger(L, 5);
-    int32_t hotz = (int32_t)luaL_optinteger(L, 6, 0);
-    int32_t warmz = (int32_t)luaL_optinteger(L, 7, 1);
+    int32_t tile_x = (int32_t)luaL_checkinteger(L, 2);
+    int32_t tile_y = (int32_t)luaL_checkinteger(L, 3);
+    int32_t hot_chunks = (int32_t)luaL_checkinteger(L, 4);  // Changed from hot_radius
+    int32_t warm_chunks = (int32_t)luaL_checkinteger(L, 5); // Changed from warm_radius
+    int32_t hot_z = (int32_t)luaL_checkinteger(L, 6);
+    int32_t warm_z = (int32_t)luaL_checkinteger(L, 7);
     
-    lua_pushinteger(L, SetObserver(z, tx, ty, hot, warm, hotz, warmz));
+    lua_pushinteger(L, SetObserver(z, tile_x, tile_y, hot_chunks, warm_chunks, hot_z, warm_z));
     return 1;
 }
 
 static int L_move_observer(lua_State* L) {
     int32_t id = (int32_t)luaL_checkinteger(L, 1);
     int32_t z = (int32_t)luaL_checkinteger(L, 2);
-    int32_t tx = (int32_t)luaL_checkinteger(L, 3);
-    int32_t ty = (int32_t)luaL_checkinteger(L, 4);
+    int32_t tile_x = (int32_t)luaL_checkinteger(L, 3);
+    int32_t tile_y = (int32_t)luaL_checkinteger(L, 4);
     
-    MoveObserver(id, z, tx, ty);
+    MoveObserver(id, z, tile_x, tile_y);
     return 0;
+}
+
+// === OBSERVER SYSTEM FUNCTIONS ===
+
+static int L_get_observers(lua_State* L) {
+    const std::vector<Observer>& observers = GetObservers();
+    
+    lua_newtable(L);
+    for(size_t i = 0; i < observers.size(); i++) {
+        lua_createtable(L, 0, 7);
+        
+        lua_pushinteger(L, observers[i].id);
+        lua_setfield(L, -2, "id");
+        
+        lua_pushinteger(L, observers[i].z);
+        lua_setfield(L, -2, "z");
+        
+        lua_pushinteger(L, observers[i].tile_x);
+        lua_setfield(L, -2, "tile_x");
+        
+        lua_pushinteger(L, observers[i].tile_y);
+        lua_setfield(L, -2, "tile_y");
+        
+        lua_pushinteger(L, observers[i].hot_chunk_radius);  // Changed from hot_radius
+        lua_setfield(L, -2, "hot_chunk_radius");
+        
+        lua_pushinteger(L, observers[i].warm_chunk_radius); // Changed from warm_radius
+        lua_setfield(L, -2, "warm_chunk_radius");
+        
+        lua_pushinteger(L, observers[i].hot_z_layers);
+        lua_setfield(L, -2, "hot_z_layers");
+        
+        lua_pushinteger(L, observers[i].warm_z_layers);
+        lua_setfield(L, -2, "warm_z_layers");
+        
+        lua_rawseti(L, -2, i + 1);
+    }
+    
+    return 1;
+}
+
+static int L_get_hot_chunks(lua_State* L) {
+    int32_t floor_z = (int32_t)luaL_checkinteger(L, 1);
+    
+    Floor* floor = GetFloorByZ(floor_z);
+    if (!floor) {
+        lua_newtable(L);  // Return empty table if floor doesn't exist
+        return 1;
+    }
+    
+    lua_newtable(L);
+    int index = 1;
+    
+    for(const auto& chunk_key : floor->hot_chunks) {
+        lua_createtable(L, 0, 3);
+        
+        // Extract chunk coordinates from packed key
+        int16_t cx = (int16_t)(chunk_key >> 32);
+        int16_t cy = (int16_t)(chunk_key & 0xffffffff);
+        
+        lua_pushinteger(L, floor_z);
+        lua_setfield(L, -2, "floor_z");
+        
+        lua_pushinteger(L, cx);
+        lua_setfield(L, -2, "chunk_x");
+        
+        lua_pushinteger(L, cy);
+        lua_setfield(L, -2, "chunk_y");
+        
+        lua_rawseti(L, -2, index++);
+    }
+    
+    return 1;
+}
+
+static int L_get_warm_chunks(lua_State* L) {
+    int32_t floor_z = (int32_t)luaL_checkinteger(L, 1);
+    
+    Floor* floor = GetFloorByZ(floor_z);
+    if (!floor) {
+        lua_newtable(L);  // Return empty table if floor doesn't exist
+        return 1;
+    }
+    
+    lua_newtable(L);
+    int index = 1;
+    
+    for(const auto& chunk_key : floor->warm_chunks) {
+        lua_createtable(L, 0, 3);
+        
+        // Extract chunk coordinates from packed key
+        int16_t cx = (int16_t)(chunk_key >> 32);
+        int16_t cy = (int16_t)(chunk_key & 0xffffffff);
+        
+        lua_pushinteger(L, floor_z);
+        lua_setfield(L, -2, "floor_z");
+        
+        lua_pushinteger(L, cx);
+        lua_setfield(L, -2, "chunk_x");
+        
+        lua_pushinteger(L, cy);
+        lua_setfield(L, -2, "chunk_y");
+        
+        lua_rawseti(L, -2, index++);
+    }
+    
+    return 1;
 }
 
 // === FLOOR MANAGEMENT ===
@@ -670,6 +777,9 @@ static const luaL_Reg sim_functions[] = {
     // Observer system
     {"set_observer", L_set_observer},
     {"move_observer", L_move_observer},
+    {"get_observers", L_get_observers},           // ← NEW
+    {"get_hot_chunks", L_get_hot_chunks},         // ← NEW
+    {"get_warm_chunks", L_get_warm_chunks},       // ← NEW
     
     // Floor management
     {"set_current_floor", L_set_current_floor},
