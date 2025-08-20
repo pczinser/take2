@@ -4,6 +4,8 @@
 #include "../world/entity.hpp"
 #include "../components/component_registry.hpp"
 #include "../observer/observer.hpp"
+#include "../systems/inventory_system.hpp"
+#include "../items.hpp"
 #include <unordered_map>
 #include <algorithm>
 #include <string>
@@ -313,17 +315,155 @@ static int L_get_entities_on_floor(lua_State* L) {
 // Add this function BEFORE the L_register_entity_prototypes function (around line 310)
 
 static void CreateComponentInstancesFromLua(EntityId entity_id, const std::string& prototype_name, lua_State* L, int prototype_index, float grid_x, float grid_y, int32_t floor_z) {
-    // Simple implementation - just create basic components for now
+    // Get the components table
+    lua_getfield(L, prototype_index, "components");
+    if (!lua_istable(L, -1)) {
+        lua_pop(L, 1);
+        return;
+    }
     
-    // Create metadata component
-    components::g_metadata_components.AddComponent(entity_id, 
-        components::MetadataComponent(prototype_name, "entity", ""));
+    // Parse metadata component
+    lua_getfield(L, -1, "metadata");
+    if (lua_istable(L, -1)) {
+        std::string display_name = prototype_name;
+        std::string category = "entity";
+        std::string description = "";
+        
+        lua_getfield(L, -1, "display_name");
+        if (lua_isstring(L, -1)) {
+            display_name = lua_tostring(L, -1);
+        }
+        lua_pop(L, 1);
+        
+        lua_getfield(L, -1, "category");
+        if (lua_isstring(L, -1)) {
+            category = lua_tostring(L, -1);
+        }
+        lua_pop(L, 1);
+        
+        components::g_metadata_components.AddComponent(entity_id, 
+            components::MetadataComponent(display_name, category, description));
+    }
+    lua_pop(L, 1);
     
-    // Create transform component
-    components::g_transform_components.AddComponent(entity_id, 
-        components::TransformComponent(grid_x, grid_y, floor_z, 100.0f));
+    // Parse transform component (now includes size)
+    lua_getfield(L, -1, "transform");
+    if (lua_istable(L, -1)) {
+        float move_speed = 100.0f;
+        int32_t width = 1, height = 1;
+        
+        lua_getfield(L, -1, "move_speed");
+        if (lua_isnumber(L, -1)) move_speed = (float)lua_tonumber(L, -1);
+        lua_pop(L, 1);
+        
+        lua_getfield(L, -1, "width");
+        if (lua_isnumber(L, -1)) width = (int32_t)lua_tonumber(L, -1);
+        lua_pop(L, 1);
+        
+        lua_getfield(L, -1, "height");
+        if (lua_isnumber(L, -1)) height = (int32_t)lua_tonumber(L, -1);
+        lua_pop(L, 1);
+        
+        components::g_transform_components.AddComponent(entity_id, 
+            components::TransformComponent(grid_x, grid_y, floor_z, move_speed, width, height));
+    } else {
+        // Default transform if not specified
+        components::g_transform_components.AddComponent(entity_id, 
+            components::TransformComponent(grid_x, grid_y, floor_z, 100.0f, 1, 1));
+    }
+    lua_pop(L, 1);
     
-    printf("Created basic components for entity %d from prototype %s\n", entity_id, prototype_name.c_str());
+    // Remove building component parsing entirely - size is now in transform component
+    
+    // Parse production component
+    lua_getfield(L, -1, "production");
+    if (lua_istable(L, -1)) {
+        float production_rate = 0.0f;
+        float extraction_rate = 0.0f;
+        int32_t target_resource = -1;
+        
+        lua_getfield(L, -1, "production_rate");
+        if (lua_isnumber(L, -1)) production_rate = (float)lua_tonumber(L, -1);
+        lua_pop(L, 1);
+        
+        lua_getfield(L, -1, "extraction_rate");
+        if (lua_isnumber(L, -1)) extraction_rate = (float)lua_tonumber(L, -1);
+        lua_pop(L, 1);
+        
+        lua_getfield(L, -1, "target_resource");
+        if (lua_isnumber(L, -1)) target_resource = (int32_t)lua_tonumber(L, -1);
+        lua_pop(L, 1);
+        
+        components::ProductionComponent prod_comp;
+        prod_comp.production_rate = production_rate;
+        prod_comp.extraction_rate = extraction_rate;
+        prod_comp.target_resource = target_resource;
+        components::g_production_components.AddComponent(entity_id, prod_comp);
+    }
+    lua_pop(L, 1);
+    
+    // Parse health component
+    lua_getfield(L, -1, "health");
+    if (lua_istable(L, -1)) {
+        int32_t current_health = 100;
+        int32_t max_health = 100;
+        
+        lua_getfield(L, -1, "current_health");
+        if (lua_isnumber(L, -1)) current_health = (int32_t)lua_tonumber(L, -1);
+        lua_pop(L, 1);
+        
+        lua_getfield(L, -1, "max_health");
+        if (lua_isnumber(L, -1)) max_health = (int32_t)lua_tonumber(L, -1);
+        lua_pop(L, 1);
+        
+        components::g_health_components.AddComponent(entity_id, 
+            components::HealthComponent(current_health, max_health));
+    }
+    lua_pop(L, 1);
+    
+    // Parse inventory component
+    lua_getfield(L, -1, "inventory");
+    if (lua_istable(L, -1)) {
+        std::vector<components::InventoryComponent::InventorySlot> slots;
+        
+        lua_getfield(L, -1, "slots");
+        if (lua_istable(L, -1)) {
+            int slot_count = lua_objlen(L, -1);
+            for (int i = 1; i <= slot_count; i++) {
+                lua_rawgeti(L, -1, i);
+                if (lua_istable(L, -1)) {
+                    components::InventoryComponent::InventorySlot slot;
+                    
+                    lua_getfield(L, -1, "is_output");
+                    if (lua_isboolean(L, -1)) slot.is_output = lua_toboolean(L, -1);
+                    lua_pop(L, 1);
+                    
+                    lua_getfield(L, -1, "whitelist");
+                    if (lua_istable(L, -1)) {
+                        int whitelist_count = lua_objlen(L, -1);
+                        for (int j = 1; j <= whitelist_count; j++) {
+                            lua_rawgeti(L, -1, j);
+                            if (lua_isnumber(L, -1)) {
+                                slot.whitelist.push_back((ItemType)lua_tonumber(L, -1));
+                            }
+                            lua_pop(L, 1);
+                        }
+                    }
+                    lua_pop(L, 1);
+                    
+                    slots.push_back(slot);
+                }
+                lua_pop(L, 1);
+            }
+        }
+        lua_pop(L, 1);
+        
+        components::g_inventory_components.AddComponent(entity_id, 
+            components::InventoryComponent(slots));
+    }
+    lua_pop(L, 1);
+    
+    lua_pop(L, 1); // Pop components table
 }
 
 // === PROTOTYPE REGISTRATION ===
@@ -398,6 +538,106 @@ static int L_get_current_floor(lua_State* L) {
     return 1;
 }
 
+// === INVENTORY FUNCTIONS ===
+
+static int L_inventory_add_to_slot(lua_State* L) {
+    EntityId entity_id = (EntityId)luaL_checkinteger(L, 1);
+    int32_t slot_index = (int32_t)luaL_checkinteger(L, 2);
+    ItemType item = (ItemType)luaL_checkinteger(L, 3);
+    int32_t amount = (int32_t)luaL_checkinteger(L, 4);
+    
+    bool success = Inventory_AddToSlot(entity_id, slot_index, item, amount);
+    lua_pushboolean(L, success);
+    return 1;
+}
+
+static int L_inventory_remove_from_slot(lua_State* L) {
+    EntityId entity_id = (EntityId)luaL_checkinteger(L, 1);
+    int32_t slot_index = (int32_t)luaL_checkinteger(L, 2);
+    ItemType item = (ItemType)luaL_checkinteger(L, 3);
+    int32_t amount = (int32_t)luaL_checkinteger(L, 4);
+    
+    bool success = Inventory_RemoveFromSlot(entity_id, slot_index, item, amount);
+    lua_pushboolean(L, success);
+    return 1;
+}
+
+static int L_inventory_get_slot_item(lua_State* L) {
+    EntityId entity_id = (EntityId)luaL_checkinteger(L, 1);
+    int32_t slot_index = (int32_t)luaL_checkinteger(L, 2);
+    
+    ItemType item = Inventory_GetSlotItem(entity_id, slot_index);
+    lua_pushinteger(L, item);
+    return 1;
+}
+
+static int L_inventory_get_slot_quantity(lua_State* L) {
+    EntityId entity_id = (EntityId)luaL_checkinteger(L, 1);
+    int32_t slot_index = (int32_t)luaL_checkinteger(L, 2);
+    
+    int32_t quantity = Inventory_GetSlotQuantity(entity_id, slot_index);
+    lua_pushinteger(L, quantity);
+    return 1;
+}
+
+static int L_inventory_get_output_slots(lua_State* L) {
+    EntityId entity_id = (EntityId)luaL_checkinteger(L, 1);
+    
+    std::vector<int32_t> output_slots = Inventory_GetOutputSlots(entity_id);
+    
+    lua_newtable(L);
+    for (size_t i = 0; i < output_slots.size(); i++) {
+        lua_pushinteger(L, output_slots[i]);
+        lua_rawseti(L, -2, i + 1);
+    }
+    
+    return 1;
+}
+
+static int L_inventory_get_slot_count(lua_State* L) {
+    EntityId entity_id = (EntityId)luaL_checkinteger(L, 1);
+    
+    auto* inventory = components::g_inventory_components.GetComponent(entity_id);
+    if (!inventory) {
+        lua_pushinteger(L, 0);
+        return 1;
+    }
+    
+    lua_pushinteger(L, (int32_t)inventory->slots.size());
+    return 1;
+}
+
+static int L_inventory_is_slot_output(lua_State* L) {
+    EntityId entity_id = (EntityId)luaL_checkinteger(L, 1);
+    int32_t slot_index = (int32_t)luaL_checkinteger(L, 2);
+    
+    bool is_output = Inventory_IsSlotOutput(entity_id, slot_index);
+    lua_pushboolean(L, is_output);
+    return 1;
+}
+
+// Add this function to get entities by prototype name
+static int L_get_entities_by_prototype(lua_State* L) {
+    const char* prototype_name = luaL_checkstring(L, 1);
+    
+    std::vector<EntityId> result;
+    const std::vector<Entity>& entities = GetAllEntities();
+    
+    for(const Entity& entity : entities) {
+        if(entity.prototype_name == prototype_name) {
+            result.push_back(entity.id);
+        }
+    }
+    
+    lua_newtable(L);
+    for(size_t i = 0; i < result.size(); i++) {
+        lua_pushinteger(L, result[i]);
+        lua_rawseti(L, -2, i + 1);
+    }
+    
+    return 1;
+}
+
 // === FUNCTION REGISTRATION ===
 
 static const luaL_Reg sim_functions[] = {
@@ -422,6 +662,7 @@ static const luaL_Reg sim_functions[] = {
     {"get_entities_in_radius", L_get_entities_in_radius},
     {"get_entities_at_tile", L_get_entities_at_tile},
     {"get_entities_on_floor", L_get_entities_on_floor},
+    {"get_entities_by_prototype", L_get_entities_by_prototype},
     
     // Prototype registration
     {"register_entity_prototypes", L_register_entity_prototypes},
@@ -433,6 +674,15 @@ static const luaL_Reg sim_functions[] = {
     // Floor management
     {"set_current_floor", L_set_current_floor},
     {"get_current_floor", L_get_current_floor},
+    
+    // Inventory functions
+    {"inventory_add_to_slot", L_inventory_add_to_slot},
+    {"inventory_remove_from_slot", L_inventory_remove_from_slot},
+    {"inventory_get_slot_item", L_inventory_get_slot_item},
+    {"inventory_get_slot_quantity", L_inventory_get_slot_quantity},
+    {"inventory_get_slot_count", L_inventory_get_slot_count},
+    {"inventory_is_slot_output", L_inventory_is_slot_output},
+    {"inventory_get_output_slots", L_inventory_get_output_slots},
     
     {NULL, NULL}
 };

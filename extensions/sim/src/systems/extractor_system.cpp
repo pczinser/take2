@@ -1,6 +1,7 @@
 #include "../systems/extractor_system.hpp"
 #include "../components/component_registry.hpp"
 #include "../systems/inventory_system.hpp"
+#include "../items.hpp"
 #include <vector>
 
 namespace simcore {
@@ -40,7 +41,7 @@ void Extractor_Step(float dt) {
                     // Check if slot is empty or can hold more of the target resource
                     if(current_item == ITEM_NONE || 
                        (current_item == (ItemType)production->target_resource && 
-                        current_quantity < GetItemMaxStackSize((ItemType)production->target_resource))) {
+                        current_quantity < Items_GetMaxStackSize((ItemType)production->target_resource))) {
                         has_space = true;
                         break;
                     }

@@ -1,3 +1,7 @@
+-- Main script - handles game initialization and global systems
+
+local entity_loader = require("game.scripts.entity_loader")
+
 function init(self)
     --msg.post(".", "acquire_input_focus")
     print("Sim Kernel Starter: initializing")
@@ -12,6 +16,12 @@ function init(self)
 
     -- Demo portal: from z=0 (chunk 0,0 tile 0,0) to z=1 (chunk 1,1 tile 31,31)
     sim.add_portal(0, 0, 0, 0, 0,   1, 1, 1, 31, 31)
+
+    -- Initialize entity system (only register prototypes)
+    entity_loader.init()
+    
+    -- List available prototypes (for debugging)
+    entity_loader.list_prototypes()
 
     self.next_print = 0
 end

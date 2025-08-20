@@ -29,7 +29,6 @@ static inline int64_t PackChunkCoords(int32_t z, int32_t cx, int32_t cy) {
 
 void AddEntityToChunkMapping(EntityId entity_id) {
     components::TransformComponent* transform = components::g_transform_components.GetComponent(entity_id);
-    components::BuildingComponent* building = components::g_building_components.GetComponent(entity_id);
     
     if (!transform) return;
     
@@ -39,10 +38,10 @@ void AddEntityToChunkMapping(EntityId entity_id) {
     int32_t end_chunk_x = start_chunk_x;
     int32_t end_chunk_y = start_chunk_y;
     
-    // If entity has building component, it might span multiple chunks
-    if (building) {
-        int32_t entity_end_x = (int32_t)transform->grid_x + building->width - 1;
-        int32_t entity_end_y = (int32_t)transform->grid_y + building->height - 1;
+    // If entity has size > 1, it might span multiple chunks
+    if (transform->width > 1 || transform->height > 1) {
+        int32_t entity_end_x = (int32_t)transform->grid_x + transform->width - 1;
+        int32_t entity_end_y = (int32_t)transform->grid_y + transform->height - 1;
         end_chunk_x = entity_end_x / 32;
         end_chunk_y = entity_end_y / 32;
     }
@@ -61,7 +60,6 @@ void AddEntityToChunkMapping(EntityId entity_id) {
 
 void RemoveEntityFromChunkMapping(EntityId entity_id) {
     components::TransformComponent* transform = components::g_transform_components.GetComponent(entity_id);
-    components::BuildingComponent* building = components::g_building_components.GetComponent(entity_id);
     
     if (!transform) return;
     
@@ -71,9 +69,9 @@ void RemoveEntityFromChunkMapping(EntityId entity_id) {
     int32_t end_chunk_x = start_chunk_x;
     int32_t end_chunk_y = start_chunk_y;
     
-    if (building) {
-        int32_t entity_end_x = (int32_t)transform->grid_x + building->width - 1;
-        int32_t entity_end_y = (int32_t)transform->grid_y + building->height - 1;
+    if (transform->width > 1 || transform->height > 1) {
+        int32_t entity_end_x = (int32_t)transform->grid_x + transform->width - 1;
+        int32_t entity_end_y = (int32_t)transform->grid_y + transform->height - 1;
         end_chunk_x = entity_end_x / 32;
         end_chunk_y = entity_end_y / 32;
     }
@@ -93,7 +91,6 @@ void RemoveEntityFromChunkMapping(EntityId entity_id) {
 void UpdateEntityChunkMapping(EntityId entity_id, int32_t old_chunk_x, int32_t old_chunk_y, int32_t old_floor_z) {
     // Remove from old chunks
     components::TransformComponent* transform = components::g_transform_components.GetComponent(entity_id);
-    components::BuildingComponent* building = components::g_building_components.GetComponent(entity_id);
     
     if (!transform) return;
     
@@ -101,10 +98,10 @@ void UpdateEntityChunkMapping(EntityId entity_id, int32_t old_chunk_x, int32_t o
     int32_t old_end_chunk_x = old_chunk_x;
     int32_t old_end_chunk_y = old_chunk_y;
     
-    if (building) {
+    if (transform->width > 1 || transform->height > 1) {
         // Calculate old occupied chunks (approximate)
-        old_end_chunk_x = (old_chunk_x * 32 + building->width - 1) / 32;
-        old_end_chunk_y = (old_chunk_y * 32 + building->height - 1) / 32;
+        old_end_chunk_x = (old_chunk_x * 32 + transform->width - 1) / 32;
+        old_end_chunk_y = (old_chunk_y * 32 + transform->height - 1) / 32;
     }
     
     for (int32_t cx = old_chunk_x; cx <= old_end_chunk_x; ++cx) {
@@ -128,6 +125,38 @@ EntityId CreateEntity(const std::string& prototype_name, float grid_x, float gri
     if(it == g_entity_prototypes.end()) {
         printf("ERROR: Unknown entity prototype: %s\n", prototype_name.c_str());
         return -1;
+    }
+    
+    // Get the prototype entity to check its transform component
+    Entity* prototype = GetEntity(it->second.prototype_id);
+    if (!prototype) {
+        printf("ERROR: Prototype entity %d not found\n", it->second.prototype_id);
+        return -1;
+    }
+    
+    // Check entity footprint for collision
+    components::TransformComponent* transform = components::g_transform_components.GetComponent(it->second.prototype_id);
+    int32_t width = 1;
+    int32_t height = 1;
+    
+    if (transform) {
+        width = transform->width;
+        height = transform->height;
+    }
+    
+    // Check each tile in the entity footprint
+    for (int32_t dx = 0; dx < width; ++dx) {
+        for (int32_t dy = 0; dy < height; ++dy) {
+            int32_t check_x = (int32_t)grid_x + dx;
+            int32_t check_y = (int32_t)grid_y + dy;
+            
+            std::vector<EntityId> existing_entities = GetEntitiesAtTile(floor_z, check_x, check_y);
+            if (!existing_entities.empty()) {
+                printf("ERROR: Cannot create entity at (%.1f, %.1f) on floor %d - location occupied by %zu entities at tile (%d, %d)\n", 
+                       grid_x, grid_y, floor_z, existing_entities.size(), check_x, check_y);
+                return -1;  // Return -1 to indicate failure
+            }
+        }
     }
     
     // Clone the prototype entity
@@ -316,12 +345,6 @@ void CloneComponentsFromEntity(EntityId source_id, EntityId target_id, float gri
         components::g_transform_components.AddComponent(target_id, new_transform);
     }
     
-    // Clone building component
-    components::BuildingComponent* source_building = components::g_building_components.GetComponent(source_id);
-    if (source_building) {
-        components::g_building_components.AddComponent(target_id, *source_building);
-    }
-    
     // Clone production component
     components::ProductionComponent* source_production = components::g_production_components.GetComponent(source_id);
     if (source_production) {
@@ -343,185 +366,6 @@ void CloneComponentsFromEntity(EntityId source_id, EntityId target_id, float gri
     printf("Cloned all components from entity %d to entity %d\n", source_id, target_id);
 }
 
-// === COMPONENT CREATION (for prototype creation) ===
-
-// Remove this function entirely - it doesn't belong in the C++ core
-// void CreateComponentInstancesFromLua(EntityId entity_id, const std::string& prototype_name, lua_State* L, int prototype_index, float grid_x, float grid_y, int32_t floor_z) {
-//     // Push the template table to the top of the stack
-//     lua_pushvalue(L, prototype_index);
-    
-//     // Check if components table exists
-//     lua_getfield(L, -1, "components");
-//     if (!lua_istable(L, -1)) {
-//         printf("Warning: Template %s has no components table\n", prototype_name.c_str());
-//         lua_pop(L, 2); // Pop components and template
-//         return;
-//     }
-    
-//     // === METADATA COMPONENT ===
-//     lua_getfield(L, -1, "metadata");
-//     if (lua_istable(L, -1)) {
-//         std::string display_name = prototype_name;  // Default to template name
-//         std::string category = "entity";           // Default category
-        
-//         lua_getfield(L, -1, "display_name");
-//         if (lua_isstring(L, -1)) {
-//             display_name = lua_tostring(L, -1);
-//         }
-//         lua_pop(L, 1);
-        
-//         lua_getfield(L, -1, "category");
-//         if (lua_isstring(L, -1)) {
-//             category = lua_tostring(L, -1);
-//         }
-//         lua_pop(L, 1);
-        
-//         components::g_metadata_components.AddComponent(entity_id, 
-//             components::MetadataComponent(display_name, category));
-//     }
-//     lua_pop(L, 1); // Pop metadata table
-    
-//     // === TRANSFORM COMPONENT ===
-//     lua_getfield(L, -1, "transform");
-//     if (lua_istable(L, -1)) {
-//         float move_speed = 100.0f;  // Default speed
-        
-//         lua_getfield(L, -1, "move_speed");
-//         if (lua_isnumber(L, -1)) {
-//             move_speed = (float)lua_tonumber(L, -1);
-//         }
-//         lua_pop(L, 1);
-        
-//         components::g_transform_components.AddComponent(entity_id, 
-//             components::TransformComponent(grid_x, grid_y, floor_z, move_speed));
-//     }
-//     lua_pop(L, 1); // Pop transform table
-    
-//     // === BUILDING COMPONENT ===
-//     lua_getfield(L, -1, "building");
-//     if (lua_istable(L, -1)) {
-//         int32_t width = 1;
-//         int32_t height = 1;
-//         std::string building_type = "generic";
-        
-//         lua_getfield(L, -1, "width");
-//         if (lua_isnumber(L, -1)) {
-//             width = (int32_t)lua_tonumber(L, -1);
-//         }
-//         lua_pop(L, 1);
-        
-//         lua_getfield(L, -1, "height");
-//         if (lua_isnumber(L, -1)) {
-//             height = (int32_t)lua_tonumber(L, -1);
-//         }
-//         lua_pop(L, 1);
-        
-//         lua_getfield(L, -1, "type");
-//         if (lua_isstring(L, -1)) {
-//             building_type = lua_tostring(L, -1);
-//         }
-//         lua_pop(L, 1);
-        
-//         components::g_building_components.AddComponent(entity_id, 
-//             components::BuildingComponent(width, height, building_type));
-//     }
-//     lua_pop(L, 1); // Pop building table
-    
-//     // === PRODUCTION COMPONENT ===
-//     lua_getfield(L, -1, "production");
-//     if (lua_istable(L, -1)) {
-//         components::ProductionComponent prod_comp;
-        
-//         lua_getfield(L, -1, "rate");
-//         if (lua_isnumber(L, -1)) {
-//             prod_comp.production_rate = (float)lua_tonumber(L, -1);
-//         }
-//         lua_pop(L, 1);
-        
-//         lua_getfield(L, -1, "extraction_rate");
-//         if (lua_isnumber(L, -1)) {
-//             prod_comp.extraction_rate = (float)lua_tonumber(L, -1);
-//         }
-//         lua_pop(L, 1);
-        
-//         lua_getfield(L, -1, "target_resource");
-//         if (lua_isnumber(L, -1)) {
-//             prod_comp.target_resource = (int32_t)lua_tonumber(L, -1);
-//         }
-//         lua_pop(L, 1);
-        
-//         components::g_production_components.AddComponent(entity_id, prod_comp);
-//     }
-//     lua_pop(L, 1); // Pop production table
-    
-//     // === HEALTH COMPONENT ===
-//     lua_getfield(L, -1, "health");
-//     if (lua_istable(L, -1)) {
-//         int32_t health_amount = 100;
-        
-//         lua_getfield(L, -1, "amount");
-//         if (lua_isnumber(L, -1)) {
-//             health_amount = (int32_t)lua_tonumber(L, -1);
-//         }
-//         lua_pop(L, 1);
-        
-//         components::g_health_components.AddComponent(entity_id, 
-//             components::HealthComponent(health_amount));
-//     }
-//     lua_pop(L, 1); // Pop health table
-    
-//     // === INVENTORY COMPONENT ===
-//     lua_getfield(L, -1, "inventory");
-//     if (lua_istable(L, -1)) {
-//         std::vector<components::InventoryComponent::InventorySlot> slots;
-        
-//         lua_getfield(L, -1, "slots");
-//         if (lua_istable(L, -1)) {
-//             int slots_count = lua_objlen(L, -1);
-//             for (int i = 1; i <= slots_count; i++) {
-//                 lua_rawgeti(L, -1, i);
-//                 if (lua_istable(L, -1)) {
-//                     bool is_output = false;
-//                     std::vector<ItemType> whitelist;
-                    
-//                     lua_getfield(L, -1, "is_output");
-//                     if (lua_isboolean(L, -1)) {
-//                         is_output = lua_toboolean(L, -1);
-//                     }
-//                     lua_pop(L, 1);
-                    
-//                     lua_getfield(L, -1, "whitelist");
-//                     if (lua_istable(L, -1)) {
-//                         int whitelist_count = lua_objlen(L, -1);
-//                         for (int j = 1; j <= whitelist_count; j++) {
-//                             lua_rawgeti(L, -1, j);
-//                             if (lua_isnumber(L, -1)) {
-//                                 whitelist.push_back((ItemType)lua_tonumber(L, -1));
-//                             }
-//                             lua_pop(L, 1);
-//                         }
-//                     }
-//                     lua_pop(L, 1);
-                    
-//                     slots.push_back(components::InventoryComponent::InventorySlot(is_output, whitelist));
-//                 }
-//                 lua_pop(L, 1); // Pop slot table
-//             }
-//         }
-//         lua_pop(L, 1); // Pop slots table
-        
-//         if (!slots.empty()) {
-//             components::g_inventory_components.AddComponent(entity_id, 
-//                 components::InventoryComponent(slots));
-//         }
-//     }
-//     lua_pop(L, 1); // Pop inventory table
-    
-//     // Clean up stack
-//     lua_pop(L, 2); // Pop components and template
-    
-//     printf("Created components for entity %d from template %s\n", entity_id, prototype_name.c_str());
-// }
 
 // === SPATIAL QUERIES (using components) ===
 
@@ -575,16 +419,28 @@ std::vector<EntityId> GetEntitiesOnFloor(int32_t floor_z) {
 std::vector<EntityId> GetEntitiesAtTile(int32_t floor_z, int32_t tile_x, int32_t tile_y) {
     std::vector<EntityId> result;
     
-    auto entities_with_transform = components::g_transform_components.GetEntitiesWithComponent();
+    // Calculate which chunk this tile belongs to
+    int32_t chunk_x = tile_x / 32;
+    int32_t chunk_y = tile_y / 32;
     
-    for(EntityId entity_id : entities_with_transform) {
+    // Get the chunk key for fast lookup
+    int64_t chunk_key = PackChunkCoords(floor_z, chunk_x, chunk_y);
+    
+    // Look up entities in this specific chunk
+    auto chunk_it = g_chunk_entities.find(chunk_key);
+    if (chunk_it == g_chunk_entities.end()) {
+        return result;  // No entities in this chunk
+    }
+    
+    // Check each entity in the chunk for exact tile match
+    for (EntityId entity_id : chunk_it->second) {
         components::TransformComponent* transform = components::g_transform_components.GetComponent(entity_id);
-        if(transform && transform->floor_z == floor_z) {
-            // Check if entity is at this tile
+        if (transform) {
+            // Check if entity is at this exact tile
             int32_t entity_tile_x = (int32_t)transform->grid_x;
             int32_t entity_tile_y = (int32_t)transform->grid_y;
             
-            if(entity_tile_x == tile_x && entity_tile_y == tile_y) {
+            if (entity_tile_x == tile_x && entity_tile_y == tile_y) {
                 result.push_back(entity_id);
             }
         }
@@ -625,6 +481,9 @@ void InitializeEntitySystem() {
     g_entity_prototypes.clear();
     g_chunk_entities.clear();
     g_current_floor_z = 0;
+    
+    // Initialize component system
+    components::InitializeComponentSystem();
     
     printf("Entity system initialized\n");
 }

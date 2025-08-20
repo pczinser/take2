@@ -9,6 +9,8 @@
 #include "core/events.hpp"
 #include "lua/lua_bindings.hpp"
 #include "systems/extractor_system.hpp"
+#include "systems/inventory_system.hpp"  // ← Add this line
+#include "items.hpp"  // ← Add this line
 #include "components/component_registry.hpp"
 
 namespace simcore {
@@ -33,6 +35,12 @@ static dmExtension::Result Initialize(dmExtension::Params* params){
     TimeInit();
     Portal_Init();
     Extractor_Init();
+    
+    // Initialize item system first
+    Items_Init();
+    
+    // Initialize inventory system
+    Inventory_Init();
     
     // Initialize new entity system (includes component system)
     InitializeEntitySystem();

@@ -90,36 +90,117 @@ function show_player_stats(self)
     print(string.format("Floor: %d", player.floor_z))
     print(string.format("Chunk: (%d, %d)", player.chunk_x, player.chunk_y))
     print(string.format("Entity ID: %d", player.id))
+    print(string.format("Move Speed: %.1f", player.move_speed or 100.0))
     
-    -- Show inventory contents if player has inventories
-    if player.inventory_ids and #player.inventory_ids > 0 then
-        print("=== INVENTORIES ===")
-        for i, inventory_id in ipairs(player.inventory_ids) do
-            print(string.format("Inventory %d (ID: %d):", i, inventory_id))
+    -- Show inventory contents using new component-based system
+    print("=== INVENTORY ===")
+    
+    -- Get total number of slots
+    local total_slots = sim.inventory_get_slot_count(self.player_id)
+    print(string.format("Total slots: %d", total_slots))
+    
+    local used_slots = 0
+    local total_items = 0
+    local input_slots = 0
+    local output_slots = 0
+    
+    -- Check all slots
+    for slot_index = 0, total_slots - 1 do
+        local item_type = sim.inventory_get_slot_item(self.player_id, slot_index)
+        local quantity = sim.inventory_get_slot_quantity(self.player_id, slot_index)
+        local is_output = sim.inventory_is_slot_output(self.player_id, slot_index)
+        
+        if is_output then
+            output_slots = output_slots + 1
+        else
+            input_slots = input_slots + 1
+        end
+        
+        if item_type ~= 0 then  -- ITEM_NONE = 0
+            used_slots = used_slots + 1
+            total_items = total_items + quantity
             
-            -- Get inventory capacity and free space
-            local capacity = sim.inventory_get_capacity(inventory_id)
-            local free_space = sim.inventory_get_free_space(inventory_id)
-            local used_space = capacity - free_space
+            local item_name = get_item_name(item_type)
+            local slot_type = is_output and "Output" or "Input"
+            print(string.format("  %s slot %d: %s x%d", slot_type, slot_index, item_name, quantity))
+        end
+    end
+    
+    print(string.format("Inventory: %d/%d slots used (%d input, %d output), %d total items", 
+                       used_slots, total_slots, input_slots, output_slots, total_items))
+    
+    -- Show crafting building inventory too
+    local building = sim.get_entity(self.crafting_id)
+    if building then
+        print("=== CRAFTING BUILDING INVENTORY ===")
+        
+        local building_total_slots = sim.inventory_get_slot_count(self.crafting_id)
+        print(string.format("Building total slots: %d", building_total_slots))
+        
+        local building_used_slots = 0
+        local building_total_items = 0
+        local building_input_slots = 0
+        local building_output_slots = 0
+        
+        -- Check all building slots
+        for slot_index = 0, building_total_slots - 1 do
+            local item_type = sim.inventory_get_slot_item(self.crafting_id, slot_index)
+            local quantity = sim.inventory_get_slot_quantity(self.crafting_id, slot_index)
+            local is_output = sim.inventory_is_slot_output(self.crafting_id, slot_index)
             
-            print(string.format("  Capacity: %d/%d (%.1f%% full)", used_space, capacity, (used_space/capacity)*100))
+            if is_output then
+                building_output_slots = building_output_slots + 1
+            else
+                building_input_slots = building_input_slots + 1
+            end
             
-            -- Check for each item type
-            local item_types = {"stone", "iron", "wood", "herbs", "mushrooms", "crystal"}
-            local item_enum = {0, 1, 2, 3, 4, 5} -- ITEM_STONE = 0, etc.
-            
-            for j, item_name in ipairs(item_types) do
-                local count = sim.inventory_get_item_count(inventory_id, item_enum[j])
-                if count > 0 then
-                    print(string.format("    %s: %d", item_name, count))
-                end
+            if item_type ~= 0 then
+                building_used_slots = building_used_slots + 1
+                building_total_items = building_total_items + quantity
+                
+                local item_name = get_item_name(item_type)
+                local slot_type = is_output and "Output" or "Input"
+                print(string.format("  Building %s slot %d: %s x%d", slot_type, slot_index, item_name, quantity))
             end
         end
-    else
-        print("No inventories found")
+        
+        print(string.format("Building inventory: %d/%d slots used (%d input, %d output), %d total items", 
+                           building_used_slots, building_total_slots, building_input_slots, building_output_slots, building_total_items))
     end
     
     print("===================")
+end
+
+-- Helper function to convert item type enum to name
+function get_item_name(item_type)
+    local item_names = {
+        [0] = "None",
+        [1] = "Stone",
+        [2] = "Iron", 
+        [3] = "Wood",
+        [4] = "Herbs",
+        [5] = "Mushrooms",
+        [6] = "Crystal",
+        [7] = "Cut Stone"
+    }
+    return item_names[item_type] or "Unknown"
+end
+
+-- Add this function to test inventory functionality
+function test_inventory(self)
+    print("=== TESTING INVENTORY ===")
+    
+    -- Try to add some items to player inventory
+    local success1 = sim.inventory_add_to_slot(self.player_id, 0, 1, 5)  -- 5 stone to slot 0
+    local success2 = sim.inventory_add_to_slot(self.player_id, 1, 2, 3)  -- 3 iron to slot 1
+    local success3 = sim.inventory_add_to_slot(self.player_id, 2, 3, 10) -- 10 wood to slot 2
+    
+    print(string.format("Added stone: %s", tostring(success1)))
+    print(string.format("Added iron: %s", tostring(success2)))
+    print(string.format("Added wood: %s", tostring(success3)))
+    
+    -- Show updated stats
+    show_player_stats(self)
 end
 
 function init(self)
@@ -132,76 +213,35 @@ function init(self)
     -- Initialize floor tracking
     self.current_floor = 0
     
-    -- Register entity prototypes using new inventory system
-    local entity_prototypes = {
-        player = {
-            components = {
-                metadata = {
-                    display_name = "Player",
-                    category = "player"
-                },
-                transform = {
-                    move_speed = 100.0
-                },
-                health = {
-                    amount = 100
-                },
-                inventory = {
-                    slots = {
-                        -- 50 general slots for player
-                        { is_output = false, whitelist = {} },  -- Slot 1
-                        { is_output = false, whitelist = {} },  -- Slot 2
-                        -- ... repeat for 50 slots
-                    }
-                }
-            }
-        },
+    -- Wait a frame for entities to be created, then find them
+    timer.delay(0.1, false, function()
+        -- Try to get entity IDs directly from the simulation by prototype name
+        local players = sim.get_entities_by_prototype("player")
+        local crafting_buildings = sim.get_entities_by_prototype("crafting_building")
         
-        crafting_building = {
-            components = {
-                metadata = {
-                    display_name = "Crafting Building",
-                    category = "building"
-                },
-                transform = {
-                    move_speed = 0.0
-                },
-                building = {
-                    width = 1,
-                    height = 1,
-                    type = "crafting"
-                },
-                production = {
-                    rate = 10.0
-                },
-                health = {
-                    amount = 100
-                },
-                inventory = {
-                    slots = {
-                        { is_output = false, whitelist = {0, 2} },  -- Input slot (stone, wood)
-                        { is_output = false, whitelist = {1} },      -- Input slot (iron)
-                        { is_output = true, whitelist = {7} }        -- Output slot (cut stone)
-                    }
-                }
-            }
-        }
-    }
+        if #players > 0 and #crafting_buildings > 0 then
+            self.player_id = players[1]
+            self.crafting_id = crafting_buildings[1]
+            
+            print("Found entities:")
+            print("  Player: " .. self.player_id)
+            print("  Crafting: " .. self.crafting_id)
+            
+            -- Add starter items to player inventory (ONCE)
+            sim.inventory_add_to_slot(self.player_id, 0, 1, 5)  -- 5 stone to slot 0
+            sim.inventory_add_to_slot(self.player_id, 1, 2, 3)  -- 3 iron to slot 1
+            sim.inventory_add_to_slot(self.player_id, 2, 3, 10) -- 10 wood to slot 2
+            
+            -- Create observer for the player
+            self.observer_id = sim.set_observer(0, 0, 0, 10, 5, 0, 1)
+            
+            print("=== PLAYER CONTROLLER READY ===")
+        else
+            print("ERROR: Could not find entities!")
+        end
+    end)
     
-    sim.register_entity_prototypes(entity_prototypes)
-    
-    -- Create the player entity from prototype
-    self.player_id = sim.create_entity("player", 0, 0, 0)
-    print("Created player with ID: " .. self.player_id)
-    
-    -- Create a crafting building from prototype
-    self.crafting_id = sim.create_entity("crafting_building", 1, 1, 0)
-    print("Created crafting building with ID: " .. self.crafting_id)
-    
-    -- Create observer for the player
-    self.observer_id = sim.set_observer(0, 0, 0, 10, 5, 0, 1)
-    
-    print("=== NEW INVENTORY SYSTEM INITIALIZED ===")
+    print("=== PLAYER CONTROLLER INITIALIZED ===")
 end
 
 function update(self, dt)

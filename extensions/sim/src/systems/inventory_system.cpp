@@ -5,8 +5,8 @@
 
 namespace simcore {
 
-// Global component manager for inventory components
-components::ComponentManager<components::InventoryComponent> g_inventory_components;
+// Remove this line - it's already in component_registry.cpp
+// components::ComponentManager<components::InventoryComponent> g_inventory_components;
 
 void Inventory_Init() {
     // Register default items
@@ -22,13 +22,14 @@ void Inventory_Init() {
 }
 
 void Inventory_Clear() {
-    g_inventory_components.Clear();
+    // Use the global component manager instead
+    components::g_inventory_components.Clear();
     printf("Inventory system cleared\n");
 }
 
-// Core operations (work on entity + slot combinations)
+// Update all functions to use the global component manager
 bool Inventory_CanAddToSlot(EntityId entity_id, int32_t slot_index, ItemType item, int32_t amount) {
-    auto* inventory = g_inventory_components.GetComponent(entity_id);
+    auto* inventory = components::g_inventory_components.GetComponent(entity_id);
     if (!inventory || slot_index >= (int32_t)inventory->slots.size()) {
         return false;
     }
@@ -66,7 +67,7 @@ bool Inventory_AddToSlot(EntityId entity_id, int32_t slot_index, ItemType item, 
         return false;
     }
     
-    auto* inventory = g_inventory_components.GetComponent(entity_id);
+    auto* inventory = components::g_inventory_components.GetComponent(entity_id);
     auto& slot = inventory->slots[slot_index];
     
     if (slot.item_type == ITEM_NONE) {
@@ -80,7 +81,7 @@ bool Inventory_AddToSlot(EntityId entity_id, int32_t slot_index, ItemType item, 
 }
 
 bool Inventory_RemoveFromSlot(EntityId entity_id, int32_t slot_index, ItemType item, int32_t amount) {
-    auto* inventory = g_inventory_components.GetComponent(entity_id);
+    auto* inventory = components::g_inventory_components.GetComponent(entity_id);
     if (!inventory || slot_index >= (int32_t)inventory->slots.size()) {
         return false;
     }
@@ -99,7 +100,7 @@ bool Inventory_RemoveFromSlot(EntityId entity_id, int32_t slot_index, ItemType i
 }
 
 bool Inventory_SwapSlots(EntityId entity_id, int32_t slot_a, int32_t slot_b) {
-    auto* inventory = g_inventory_components.GetComponent(entity_id);
+    auto* inventory = components::g_inventory_components.GetComponent(entity_id);
     if (!inventory || slot_a >= (int32_t)inventory->slots.size() || slot_b >= (int32_t)inventory->slots.size()) {
         return false;
     }
@@ -110,7 +111,7 @@ bool Inventory_SwapSlots(EntityId entity_id, int32_t slot_a, int32_t slot_b) {
 
 // Queries
 ItemType Inventory_GetSlotItem(EntityId entity_id, int32_t slot_index) {
-    auto* inventory = g_inventory_components.GetComponent(entity_id);
+    auto* inventory = components::g_inventory_components.GetComponent(entity_id);
     if (!inventory || slot_index >= (int32_t)inventory->slots.size()) {
         return ITEM_NONE;
     }
@@ -118,7 +119,7 @@ ItemType Inventory_GetSlotItem(EntityId entity_id, int32_t slot_index) {
 }
 
 int32_t Inventory_GetSlotQuantity(EntityId entity_id, int32_t slot_index) {
-    auto* inventory = g_inventory_components.GetComponent(entity_id);
+    auto* inventory = components::g_inventory_components.GetComponent(entity_id);
     if (!inventory || slot_index >= (int32_t)inventory->slots.size()) {
         return 0;
     }
@@ -126,7 +127,7 @@ int32_t Inventory_GetSlotQuantity(EntityId entity_id, int32_t slot_index) {
 }
 
 bool Inventory_IsSlotOutput(EntityId entity_id, int32_t slot_index) {
-    auto* inventory = g_inventory_components.GetComponent(entity_id);
+    auto* inventory = components::g_inventory_components.GetComponent(entity_id);
     if (!inventory || slot_index >= (int32_t)inventory->slots.size()) {
         return false;
     }
@@ -135,7 +136,7 @@ bool Inventory_IsSlotOutput(EntityId entity_id, int32_t slot_index) {
 
 std::vector<int32_t> Inventory_GetInputSlots(EntityId entity_id) {
     std::vector<int32_t> result;
-    auto* inventory = g_inventory_components.GetComponent(entity_id);
+    auto* inventory = components::g_inventory_components.GetComponent(entity_id);
     if (!inventory) return result;
     
     for (int32_t i = 0; i < (int32_t)inventory->slots.size(); i++) {
@@ -148,7 +149,7 @@ std::vector<int32_t> Inventory_GetInputSlots(EntityId entity_id) {
 
 std::vector<int32_t> Inventory_GetOutputSlots(EntityId entity_id) {
     std::vector<int32_t> result;
-    auto* inventory = g_inventory_components.GetComponent(entity_id);
+    auto* inventory = components::g_inventory_components.GetComponent(entity_id);
     if (!inventory) return result;
     
     for (int32_t i = 0; i < (int32_t)inventory->slots.size(); i++) {

@@ -26,25 +26,16 @@ struct TransformComponent {
     float grid_x, grid_y;      // Grid coordinates
     int32_t floor_z;           // Floor/level
     int32_t chunk_x, chunk_y;  // Chunk coordinates (derived from grid_x/y)
-    float move_speed;          // Movement speed (added here)
+    float move_speed;          // Movement speed
+    int32_t width, height;     // Size in grid cells (for buildings/entities that occupy multiple tiles)
     
-    TransformComponent() : grid_x(0), grid_y(0), floor_z(0), chunk_x(0), chunk_y(0), move_speed(100.0f) {}
-    TransformComponent(float x, float y, int32_t z, float speed = 100.0f) 
-        : grid_x(x), grid_y(y), floor_z(z), move_speed(speed) {
+    TransformComponent() : grid_x(0), grid_y(0), floor_z(0), chunk_x(0), chunk_y(0), move_speed(100.0f), width(1), height(1) {}
+    TransformComponent(float x, float y, int32_t z, float speed = 100.0f, int32_t w = 1, int32_t h = 1) 
+        : grid_x(x), grid_y(y), floor_z(z), move_speed(speed), width(w), height(h) {
         // Calculate chunk coordinates (assuming 32x32 chunks)
         chunk_x = (int32_t)(x / 32.0f);
         chunk_y = (int32_t)(y / 32.0f);
     }
-};
-
-// Building component for grid-snapped structures
-struct BuildingComponent {
-    int32_t width, height;     // Size in grid cells
-    std::string building_type; // "extractor", "assembler", etc.
-    
-    BuildingComponent() : width(1), height(1) {}
-    BuildingComponent(int32_t w, int32_t h, const std::string& type) 
-        : width(w), height(h), building_type(type) {}
 };
 
 // Production component for entities that produce/extract items
