@@ -7,73 +7,34 @@
 
 namespace simcore {
 
-// Use the same EntityId type as components
-using EntityId = components::EntityId;
+// Remove this line since EntityId is now in global simcore namespace
+// using EntityId = components::EntityId;
 
-// Clean EntityTemplate for pure component-based entities
-struct EntityTemplate {
-    std::string display_name;     // Human-readable name for UI
-    std::string category;         // "building", "player", "transport", etc.
+// Simple EntityPrototype - just stores reference to prototype entity
+struct EntityPrototype {
+    EntityId prototype_id;  // The actual prototype entity ID
+    std::string name;       // "miner", "player", etc.
     
-    // Component data specifications
-    struct ComponentData {
-        // Metadata component data
-        bool has_metadata = false;
-        std::string metadata_display_name;
-        
-        // Transform component data
-        bool has_transform = true;  // Almost all entities need transform
-        
-        // Building component data  
-        bool has_building = false;
-        int32_t building_width = 1;
-        int32_t building_height = 1;
-        std::string building_type;
-        
-        // Movement component data
-        bool has_movement = false;
-        float movement_speed = 0.0f;
-        
-        // Production component data
-        bool has_production = false;
-        float production_rate = 0.0f;
-        float extraction_rate = 0.0f;
-        int32_t target_resource = -1;
-        
-        // Health component data
-        bool has_health = false;
-        int32_t health_amount = 100;
-        
-        // Inventory component data
-        bool has_inventory = false;
-        struct InventorySlot {
-            int32_t inventory_type;  // InventoryType enum value
-            int32_t capacity;
-        };
-        std::vector<InventorySlot> inventory_slots;
-    };
-    
-    ComponentData components;
-    
-    EntityTemplate() = default;
-    EntityTemplate(const std::string& name, const std::string& cat) 
-        : display_name(name), category(cat) {}
+    EntityPrototype() = default;
+    EntityPrototype(EntityId id, const std::string& prototype_name) 
+        : prototype_id(id), name(prototype_name) {}
 };
 
 // Minimal Entity - just core identity, everything else in components
 struct Entity {
     EntityId id;
     std::string name;           // For debugging/identification  
-    std::string template_name;  // Which template created this entity
+    std::string prototype_name; // Which prototype this entity was cloned from
     bool is_dirty = false;     // For rendering system
     
     Entity() = default;
-    Entity(EntityId entity_id, const std::string& entity_name, const std::string& templ_name)
-        : id(entity_id), name(entity_name), template_name(templ_name) {}
+    Entity(EntityId entity_id, const std::string& entity_name, const std::string& proto_name)
+        : id(entity_id), name(entity_name), prototype_name(proto_name) {}
 };
 
 // === ENTITY MANAGEMENT ===
-EntityId CreateEntity(const std::string& template_name, float grid_x, float grid_y, int32_t floor_z);
+EntityId CreateEntity(const std::string& prototype_name, float grid_x, float grid_y, int32_t floor_z);
+EntityId CloneEntity(EntityId prototype_id, float grid_x, float grid_y, int32_t floor_z);
 Entity* GetEntity(EntityId id);
 void DestroyEntity(EntityId id);  // Removes entity and all its components
 const std::vector<Entity>& GetAllEntities();
@@ -83,14 +44,15 @@ void MoveEntity(EntityId id, float dx, float dy);
 void SetEntityPosition(EntityId id, float grid_x, float grid_y);
 void SetEntityFloor(EntityId id, int32_t floor_z);
 
-// === TEMPLATE MANAGEMENT ===
-void RegisterEntityTemplate(const std::string& name, const EntityTemplate& templ);
-EntityTemplate* GetEntityTemplate(const std::string& name);
-void ClearEntityTemplates();
-void RegisterDefaultEntityTemplates();
+// === PROTOTYPE MANAGEMENT ===
+void RegisterEntityPrototype(const std::string& name, EntityId prototype_id);
+EntityPrototype* GetEntityPrototype(const std::string& name);
+void ClearEntityPrototypes();
+void RegisterDefaultEntityPrototypes();
 
 // === COMPONENT CREATION ===
-void CreateComponentsFromTemplate(EntityId entity_id, const EntityTemplate& templ, float grid_x, float grid_y, int32_t floor_z);
+// REMOVE THIS LINE - it doesn't belong in the C++ core:
+// void CreateComponentInstancesFromLua(EntityId entity_id, const std::string& prototype_name, lua_State* L, int prototype_index, float grid_x, float grid_y, int32_t floor_z);
 
 // Chunk mapping functions (for performance)
 void AddEntityToChunkMapping(EntityId entity_id);
@@ -113,5 +75,12 @@ void ClearEntitySystem();
 // === FLOOR MANAGEMENT ===
 void SetCurrentFloor(int32_t floor_z);
 int32_t GetCurrentFloor();
+
+// === COMPONENT CLONING ===
+void CloneComponentsFromEntity(EntityId source_id, EntityId target_id, float grid_x, float grid_y, int32_t floor_z);
+
+// Add these helper functions for prototype creation
+EntityId GetNextEntityId();
+void AddEntityToList(const Entity& entity);
 
 } // namespace simcore

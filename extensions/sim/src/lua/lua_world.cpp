@@ -3,8 +3,6 @@
 #include "lua_bindings.hpp"
 #include "../world/entity.hpp"
 #include "../components/component_registry.hpp"
-#include "../systems/inventory_system.hpp"
-#include "../systems/movement_system.hpp"
 #include "../observer/observer.hpp"
 #include <unordered_map>
 #include <algorithm>
@@ -40,21 +38,22 @@ static int L_get_active_chunks(lua_State* L){
 // === ENTITY FUNCTIONS ===
 
 static int L_create_entity(lua_State* L) {
-    const char* template_name = luaL_checkstring(L, 1);
+    const char* prototype_name = luaL_checkstring(L, 1);
     float grid_x = (float)luaL_checknumber(L, 2);
     float grid_y = (float)luaL_checknumber(L, 3);
     int32_t floor_z = (int32_t)luaL_optinteger(L, 4, 0);
     
-    EntityId entity_id = CreateEntity(template_name, grid_x, grid_y, floor_z);
+    // Create entity from prototype
+    EntityId entity_id = CreateEntity(prototype_name, grid_x, grid_y, floor_z);
     lua_pushinteger(L, entity_id);
     return 1;
 }
 
 static int L_get_entity(lua_State* L) {
     EntityId id = (EntityId)luaL_checkinteger(L, 1);
-    Entity* entity = GetEntity(id);
     
-    if(!entity) {
+    Entity* entity = GetEntity(id);
+    if (!entity) {
         lua_pushnil(L);
         return 1;
     }
@@ -66,11 +65,28 @@ static int L_get_entity(lua_State* L) {
     lua_pushstring(L, entity->name.c_str());
     lua_setfield(L, -2, "name");
     
-    lua_pushstring(L, entity->template_name.c_str());
-    lua_setfield(L, -2, "template_name");
+    lua_pushstring(L, entity->prototype_name.c_str());  // ← Fixed: template_name → prototype_name
+    lua_setfield(L, -2, "prototype_name");  // ← Fixed: template_name → prototype_name
     
     lua_pushboolean(L, entity->is_dirty);
     lua_setfield(L, -2, "is_dirty");
+    
+    // Add transform component data
+    components::TransformComponent* transform = components::g_transform_components.GetComponent(id);
+    if (transform) {
+        lua_pushnumber(L, transform->grid_x);
+        lua_setfield(L, -2, "grid_x");
+        lua_pushnumber(L, transform->grid_y);
+        lua_setfield(L, -2, "grid_y");
+        lua_pushinteger(L, transform->floor_z);
+        lua_setfield(L, -2, "floor_z");
+        lua_pushinteger(L, transform->chunk_x);
+        lua_setfield(L, -2, "chunk_x");
+        lua_pushinteger(L, transform->chunk_y);
+        lua_setfield(L, -2, "chunk_y");
+        lua_pushnumber(L, transform->move_speed);
+        lua_setfield(L, -2, "move_speed");
+    }
     
     return 1;
 }
@@ -123,62 +139,43 @@ static int L_get_entity_transform(lua_State* L) {
     return 1;
 }
 
-static int L_get_entity_movement(lua_State* L) {
-    EntityId entity_id = (EntityId)luaL_checkinteger(L, 1);
-    
-    components::MovementComponent* movement = components::g_movement_components.GetComponent(entity_id);
-    if (!movement) {
-        lua_pushnil(L);
-        return 1;
-    }
-    
-    lua_newtable(L);
-    lua_pushnumber(L, movement->move_speed);
-    lua_setfield(L, -2, "move_speed");
-    lua_pushnumber(L, movement->current_dx);
-    lua_setfield(L, -2, "current_dx");
-    lua_pushnumber(L, movement->current_dy);
-    lua_setfield(L, -2, "current_dy");
-    
-    return 1;
-}
-
 static int L_move_entity(lua_State* L) {
     EntityId entity_id = (EntityId)luaL_checkinteger(L, 1);
     float dx = (float)luaL_checknumber(L, 2);
     float dy = (float)luaL_checknumber(L, 3);
     
-    // Get current position and move relative to it
+    // Simple direct movement using transform component
     components::TransformComponent* transform = components::g_transform_components.GetComponent(entity_id);
     if (transform) {
         float new_x = transform->grid_x + dx;
         float new_y = transform->grid_y + dy;
-        Movement_TeleportEntity(entity_id, new_x, new_y);
+        
+        // Store old position for chunk mapping
+        int32_t old_chunk_x = transform->chunk_x;
+        int32_t old_chunk_y = transform->chunk_y;
+        int32_t old_floor_z = transform->floor_z;
+        
+        // Update position
+        transform->grid_x = new_x;
+        transform->grid_y = new_y;
+        transform->chunk_x = (int32_t)(new_x / 32.0f);
+        transform->chunk_y = (int32_t)(new_y / 32.0f);
+        
+        // Mark entity as dirty for rendering
+        Entity* entity = GetEntity(entity_id);
+        if (entity) {
+            entity->is_dirty = true;
+        }
+        
+        // Update chunk mapping if needed
+        if (old_chunk_x != transform->chunk_x || old_chunk_y != transform->chunk_y) {
+            UpdateEntityChunkMapping(entity_id, old_chunk_x, old_chunk_y, old_floor_z);
+        }
+        
+        printf("Entity %d moved to (%.1f, %.1f)\n", entity_id, new_x, new_y);
     }
     
     return 0;
-}
-
-static int L_set_entity_velocity(lua_State* L) {
-    EntityId entity_id = (EntityId)luaL_checkinteger(L, 1);
-    float dx = (float)luaL_checknumber(L, 2);
-    float dy = (float)luaL_checknumber(L, 3);
-    
-    Movement_SetVelocity(entity_id, dx, dy);
-    return 0;
-}
-
-static int L_stop_entity(lua_State* L) {
-    EntityId entity_id = (EntityId)luaL_checkinteger(L, 1);
-    Movement_StopEntity(entity_id);
-    return 0;
-}
-
-static int L_is_entity_moving(lua_State* L) {
-    EntityId entity_id = (EntityId)luaL_checkinteger(L, 1);
-    bool is_moving = Movement_IsMoving(entity_id);
-    lua_pushboolean(L, is_moving);
-    return 1;
 }
 
 static int L_set_entity_position(lua_State* L) {
@@ -186,7 +183,34 @@ static int L_set_entity_position(lua_State* L) {
     float grid_x = (float)luaL_checknumber(L, 2);
     float grid_y = (float)luaL_checknumber(L, 3);
     
-    Movement_TeleportEntity(entity_id, grid_x, grid_y);
+    // Direct position setting (teleport)
+    components::TransformComponent* transform = components::g_transform_components.GetComponent(entity_id);
+    if (transform) {
+        // Store old position for chunk mapping
+        int32_t old_chunk_x = transform->chunk_x;
+        int32_t old_chunk_y = transform->chunk_y;
+        int32_t old_floor_z = transform->floor_z;
+        
+        // Update position directly
+        transform->grid_x = grid_x;
+        transform->grid_y = grid_y;
+        transform->chunk_x = (int32_t)(grid_x / 32.0f);
+        transform->chunk_y = (int32_t)(grid_y / 32.0f);
+        
+        // Mark entity as dirty for rendering
+        Entity* entity = GetEntity(entity_id);
+        if (entity) {
+            entity->is_dirty = true;
+        }
+        
+        // Update chunk mapping if needed
+        if (old_chunk_x != transform->chunk_x || old_chunk_y != transform->chunk_y) {
+            UpdateEntityChunkMapping(entity_id, old_chunk_x, old_chunk_y, old_floor_z);
+        }
+        
+        printf("Entity %d teleported to (%.1f, %.1f)\n", entity_id, grid_x, grid_y);
+    }
+    
     return 0;
 }
 
@@ -194,7 +218,33 @@ static int L_set_entity_floor(lua_State* L) {
     EntityId entity_id = (EntityId)luaL_checkinteger(L, 1);
     int32_t floor_z = (int32_t)luaL_checkinteger(L, 2);
     
-    Movement_ChangeFloor(entity_id, floor_z);
+    // Direct floor change using transform component
+    components::TransformComponent* transform = components::g_transform_components.GetComponent(entity_id);
+    if (transform) {
+        int32_t old_floor_z = transform->floor_z;
+        transform->floor_z = floor_z;
+        
+        // Ensure target floor exists
+        Floor* floor = GetFloorByZ(floor_z);
+        if (!floor) {
+            int32_t chunks_w = (floor_z > 0) ? 2 : 4;
+            int32_t chunks_h = (floor_z > 0) ? 2 : 4;
+            SpawnFloorAtZ(floor_z, chunks_w, chunks_h, 32, 32);
+            printf("Auto-created floor %d for entity movement\n", floor_z);
+        }
+        
+        // Mark entity as dirty for rendering
+        Entity* entity = GetEntity(entity_id);
+        if (entity) {
+            entity->is_dirty = true;
+        }
+        
+        // Update chunk mapping (floor changed)
+        UpdateEntityChunkMapping(entity_id, transform->chunk_x, transform->chunk_y, old_floor_z);
+        
+        printf("Entity %d changed from floor %d to floor %d\n", entity_id, old_floor_z, floor_z);
+    }
+    
     return 0;
 }
 
@@ -260,11 +310,27 @@ static int L_get_entities_on_floor(lua_State* L) {
     return 1;
 }
 
-// === TEMPLATE REGISTRATION ===
+// Add this function BEFORE the L_register_entity_prototypes function (around line 310)
 
-static int L_register_entity_templates(lua_State* L) {
+static void CreateComponentInstancesFromLua(EntityId entity_id, const std::string& prototype_name, lua_State* L, int prototype_index, float grid_x, float grid_y, int32_t floor_z) {
+    // Simple implementation - just create basic components for now
+    
+    // Create metadata component
+    components::g_metadata_components.AddComponent(entity_id, 
+        components::MetadataComponent(prototype_name, "entity", ""));
+    
+    // Create transform component
+    components::g_transform_components.AddComponent(entity_id, 
+        components::TransformComponent(grid_x, grid_y, floor_z, 100.0f));
+    
+    printf("Created basic components for entity %d from prototype %s\n", entity_id, prototype_name.c_str());
+}
+
+// === PROTOTYPE REGISTRATION ===
+
+static int L_register_entity_prototypes(lua_State* L) {
     if (!lua_istable(L, 1)) {
-        return luaL_error(L, "Expected table of entity templates");
+        return luaL_error(L, "Expected table of entity prototypes");
     }
     
     lua_pushnil(L);  // First key
@@ -275,149 +341,23 @@ static int L_register_entity_templates(lua_State* L) {
             continue;
         }
         
-        const char* template_name = lua_tostring(L, -2);
+        const char* prototype_name = lua_tostring(L, -2);
         
-        // Parse template from Lua table
-        EntityTemplate templ;
+        // Create prototype entity manually (since it's not a real simulation entity)
+        EntityId prototype_id = GetNextEntityId();
+        Entity prototype_entity(prototype_id, prototype_name, prototype_name);
+        AddEntityToList(prototype_entity);
         
-        // Get display name (default to template name)
-        lua_getfield(L, -1, "display_name");
-        if (lua_isstring(L, -1)) {
-            templ.display_name = lua_tostring(L, -1);
-        } else {
-            templ.display_name = template_name;
-        }
-        lua_pop(L, 1);
+        // Parse Lua template and create components for prototype
+        CreateComponentInstancesFromLua(prototype_id, prototype_name, L, -1, 0, 0, 0);
         
-        // Get category
-        lua_getfield(L, -1, "category");
-        if (lua_isstring(L, -1)) {
-            templ.category = lua_tostring(L, -1);
-        } else {
-            // Default category based on template name
-            templ.category = "entity";
-        }
-        lua_pop(L, 1);
+        // Register the prototype
+        RegisterEntityPrototype(prototype_name, prototype_id);
         
-        // Parse components table
-        lua_getfield(L, -1, "components");
-        if (lua_istable(L, -1)) {
-            // Parse metadata component
-            lua_getfield(L, -1, "metadata");
-            if (lua_istable(L, -1)) {
-                templ.components.has_metadata = true;
-                lua_getfield(L, -1, "display_name");
-                if (lua_isstring(L, -1)) {
-                    templ.components.metadata_display_name = lua_tostring(L, -1);
-                }
-                lua_pop(L, 1);
-            }
-            lua_pop(L, 1);
-            
-            // Parse movement component
-            lua_getfield(L, -1, "movement");
-            if (lua_istable(L, -1)) {
-                templ.components.has_movement = true;
-                lua_getfield(L, -1, "move_speed");
-                if (lua_isnumber(L, -1)) {
-                    templ.components.movement_speed = (float)lua_tonumber(L, -1);
-                }
-                lua_pop(L, 1);
-            }
-            lua_pop(L, 1);
-            
-            // Parse building component
-            lua_getfield(L, -1, "building");
-            if (lua_istable(L, -1)) {
-                templ.components.has_building = true;
-                lua_getfield(L, -1, "width");
-                if (lua_isnumber(L, -1)) {
-                    templ.components.building_width = (int32_t)lua_tointeger(L, -1);
-                }
-                lua_pop(L, 1);
-                
-                lua_getfield(L, -1, "height");
-                if (lua_isnumber(L, -1)) {
-                    templ.components.building_height = (int32_t)lua_tointeger(L, -1);
-                }
-                lua_pop(L, 1);
-                
-                lua_getfield(L, -1, "building_type");
-                if (lua_isstring(L, -1)) {
-                    templ.components.building_type = lua_tostring(L, -1);
-                }
-                lua_pop(L, 1);
-            }
-            lua_pop(L, 1);
-            
-            // Parse inventory component
-            lua_getfield(L, -1, "inventory");
-            if (lua_istable(L, -1)) {
-                templ.components.has_inventory = true;
-                lua_getfield(L, -1, "slots");
-                if (lua_istable(L, -1)) {
-                    lua_pushnil(L);  // First key for slots iteration
-                    while (lua_next(L, -2) != 0) {
-                        if (lua_istable(L, -1)) {
-                            EntityTemplate::ComponentData::InventorySlot slot;
-                            lua_getfield(L, -1, "type");
-                            if (lua_isnumber(L, -1)) {
-                                slot.inventory_type = (int32_t)lua_tointeger(L, -1);
-                            }
-                            lua_pop(L, 1);
-                            
-                            lua_getfield(L, -1, "capacity");
-                            if (lua_isnumber(L, -1)) {
-                                slot.capacity = (int32_t)lua_tointeger(L, -1);
-                            }
-                            lua_pop(L, 1);
-                            
-                            templ.components.inventory_slots.push_back(slot);
-                        }
-                        lua_pop(L, 1);  // Remove value, keep key
-                    }
-                }
-                lua_pop(L, 1);  // Pop slots table
-            }
-            lua_pop(L, 1);  // Pop inventory table
-        }
-        lua_pop(L, 1);  // Pop components table
-        
-        RegisterEntityTemplate(template_name, templ);
         lua_pop(L, 1);  // Remove template value, keep key for next iteration
     }
     
     return 0;
-}
-
-// === INVENTORY SYSTEM BINDINGS ===
-
-static int L_inventory_create(lua_State* L) {
-    int32_t type = (int32_t)luaL_checkinteger(L, 1);
-    int32_t capacity = (int32_t)luaL_checkinteger(L, 2);
-    
-    InventoryId inv_id = Inventory_Create((InventoryType)type, capacity);
-    lua_pushinteger(L, inv_id);
-    return 1;
-}
-
-static int L_inventory_add_items(lua_State* L) {
-    InventoryId inv_id = (InventoryId)luaL_checkinteger(L, 1);
-    int32_t item_type = (int32_t)luaL_checkinteger(L, 2);
-    int32_t amount = (int32_t)luaL_checkinteger(L, 3);
-    
-    bool success = Inventory_AddItems(inv_id, (ItemType)item_type, amount);
-    lua_pushboolean(L, success);
-    return 1;
-}
-
-static int L_inventory_get_item_count(lua_State* L) {
-    InventoryId inv_id = (InventoryId)luaL_checkinteger(L, 1);
-    int32_t item_type = (int32_t)luaL_checkinteger(L, 2);
-    
-    int32_t count = Inventory_GetItemCount(inv_id, (ItemType)item_type);
-    lua_pushinteger(L, count);
-    return 1;
 }
 
 // === OBSERVER SYSTEM ===
@@ -473,15 +413,9 @@ static const luaL_Reg sim_functions[] = {
     {"set_entity_position", L_set_entity_position},
     {"set_entity_floor", L_set_entity_floor},
     
-    // Movement system functions
-    {"set_entity_velocity", L_set_entity_velocity},
-    {"stop_entity", L_stop_entity},
-    {"is_entity_moving", L_is_entity_moving},
-    
     // Component access functions
     {"get_entity_metadata", L_get_entity_metadata},
     {"get_entity_transform", L_get_entity_transform},
-    {"get_entity_movement", L_get_entity_movement},
     
     // Spatial query functions
     {"get_entities_in_chunk", L_get_entities_in_chunk},
@@ -489,13 +423,8 @@ static const luaL_Reg sim_functions[] = {
     {"get_entities_at_tile", L_get_entities_at_tile},
     {"get_entities_on_floor", L_get_entities_on_floor},
     
-    // Template registration
-    {"register_entity_templates", L_register_entity_templates},
-    
-    // Inventory functions
-    {"inventory_create", L_inventory_create},
-    {"inventory_add_items", L_inventory_add_items},
-    {"inventory_get_item_count", L_inventory_get_item_count},
+    // Prototype registration
+    {"register_entity_prototypes", L_register_entity_prototypes},
     
     // Observer system
     {"set_observer", L_set_observer},

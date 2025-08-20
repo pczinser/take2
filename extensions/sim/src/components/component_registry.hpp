@@ -9,7 +9,6 @@ namespace components {
 extern ComponentManager<MetadataComponent> g_metadata_components;
 extern ComponentManager<TransformComponent> g_transform_components;
 extern ComponentManager<BuildingComponent> g_building_components;
-extern ComponentManager<MovementComponent> g_movement_components;
 extern ComponentManager<ProductionComponent> g_production_components;
 extern ComponentManager<HealthComponent> g_health_components;
 extern ComponentManager<InventoryComponent> g_inventory_components;

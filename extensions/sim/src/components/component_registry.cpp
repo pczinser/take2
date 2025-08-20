@@ -8,7 +8,6 @@ namespace components {
 ComponentManager<MetadataComponent> g_metadata_components;
 ComponentManager<TransformComponent> g_transform_components;
 ComponentManager<BuildingComponent> g_building_components;
-ComponentManager<MovementComponent> g_movement_components;
 ComponentManager<ProductionComponent> g_production_components;
 ComponentManager<HealthComponent> g_health_components;
 ComponentManager<InventoryComponent> g_inventory_components;
@@ -20,7 +19,6 @@ void InitializeComponentSystem() {
     g_metadata_components.Clear();
     g_transform_components.Clear();
     g_building_components.Clear();
-    g_movement_components.Clear();
     g_production_components.Clear();
     g_health_components.Clear();
     g_inventory_components.Clear();
@@ -34,7 +32,6 @@ void ClearComponentSystem() {
     g_metadata_components.Clear();
     g_transform_components.Clear();
     g_building_components.Clear();
-    g_movement_components.Clear();
     g_production_components.Clear();
     g_health_components.Clear();
     g_inventory_components.Clear();
@@ -44,7 +41,6 @@ void RemoveAllComponents(EntityId entity_id) {
     g_metadata_components.RemoveComponent(entity_id);
     g_transform_components.RemoveComponent(entity_id);
     g_building_components.RemoveComponent(entity_id);
-    g_movement_components.RemoveComponent(entity_id);
     g_production_components.RemoveComponent(entity_id);
     g_health_components.RemoveComponent(entity_id);
     g_inventory_components.RemoveComponent(entity_id);
@@ -54,7 +50,6 @@ bool HasAnyComponents(EntityId entity_id) {
     return g_metadata_components.HasComponent(entity_id) ||
            g_transform_components.HasComponent(entity_id) ||
            g_building_components.HasComponent(entity_id) ||
-           g_movement_components.HasComponent(entity_id) ||
            g_production_components.HasComponent(entity_id) ||
            g_health_components.HasComponent(entity_id) ||
            g_inventory_components.HasComponent(entity_id);

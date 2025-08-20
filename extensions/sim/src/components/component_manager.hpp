@@ -4,9 +4,11 @@
 #include <cstdint>
 
 namespace simcore {
-namespace components {
 
+// Move EntityId to global simcore namespace
 using EntityId = int32_t;
+
+namespace components {
 
 // Template-based component manager for type-safe, cache-friendly storage
 template<typename T>

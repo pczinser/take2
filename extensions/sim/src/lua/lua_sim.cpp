@@ -6,7 +6,6 @@
 #include "../systems/portal_system.hpp"
 #include "../core/events.hpp"
 #include "lua_bindings.hpp"
-#include "../systems/inventory_system.hpp"
 
 namespace simcore {
 static bool s_paused=false; static double s_hz=60.0;
