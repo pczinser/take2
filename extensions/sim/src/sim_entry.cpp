@@ -20,7 +20,7 @@ static double g_hz = 60.0;
 static void StepOneTick(float dt){
     RebuildActivationUnion();
     
-    // Run all systems (movement now handled directly in Lua)
+    // Run all systems
     Portal_Step((int32_t)(dt*1000.0), (int64_t)(NowSeconds()*1000.0));
     Extractor_Step(dt);         // Handle resource extraction
     
@@ -33,6 +33,8 @@ static dmExtension::Result AppFinalize(dmExtension::AppParams*)   { return dmExt
 
 static dmExtension::Result Initialize(dmExtension::Params* params){
     TimeInit();
+    // Initialize new entity system (includes component system)
+    InitializeEntitySystem();
     Portal_Init();
     Extractor_Init();
     
@@ -41,9 +43,6 @@ static dmExtension::Result Initialize(dmExtension::Params* params){
     
     // Initialize inventory system
     Inventory_Init();
-    
-    // Initialize new entity system (includes component system)
-    InitializeEntitySystem();
     
     // Register Lua functions
     LuaRegister_All(params->m_L);
