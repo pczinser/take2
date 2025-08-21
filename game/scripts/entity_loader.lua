@@ -33,6 +33,38 @@ local entity_prototypes = {
                     { is_output = false, whitelist = {} },  -- Slot 8
                     { is_output = false, whitelist = {} },  -- Slot 9
                 }
+            },
+            visual = {
+                atlas_path = "/asset/atlas/player.atlas",
+                layer = 1,
+                -- Animation mapping based on your atlas structure
+                animations = {
+                    idle_north = {
+                        conditions = { facing = "north", moving = false }
+                    },
+                    idle_south = {
+                        conditions = { facing = "south", moving = false }
+                    },
+                    idle_east = {
+                        conditions = { facing = "east", moving = false }
+                    },
+                    idle_west = {
+                        conditions = { facing = "west", moving = false }
+                    },
+                    -- Reuse idle animations for walking (temporary)
+                    walk_north = {
+                        conditions = { facing = "north", moving = true }
+                    },
+                    walk_south = {
+                        conditions = { facing = "south", moving = true }
+                    },
+                    walk_east = {
+                        conditions = { facing = "east", moving = true }
+                    },
+                    walk_west = {
+                        conditions = { facing = "west", moving = true }
+                    }
+                }
             }
         }
     },

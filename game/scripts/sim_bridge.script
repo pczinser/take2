@@ -1,0 +1,161 @@
+-- Signal + Pull Bridge Script
+-- Handles communication between C++ simulation and Lua visuals
+
+local sim = require("game.scripts.sim")
+local visual_manager = require("game.scripts.visual_manager")
+
+local sim_bridge = {
+    initialized = false,
+    last_tick = 0
+}
+
+-- Message IDs
+local SIM_TICK = hash("sim_tick")
+local SIM_SPAWN = hash("sim_spawn")
+local SIM_DESPAWN = hash("sim_despawn")
+local SIM_EVENT = hash("sim_event")
+
+-- Reusable stream tables to avoid allocations
+local streams = {
+    prev = {},
+    curr = {}
+}
+
+function init(self)
+    print("=== INITIALIZING SIM BRIDGE ===")
+    
+    -- Register this script as the listener for sim signals
+    sim.register_listener(msg.url())
+    
+    -- Initialize visual manager
+    visual_manager.init()
+    
+    sim_bridge.initialized = true
+    print("=== SIM BRIDGE INITIALIZED ===")
+end
+
+function update(self, dt)
+    -- Optional: Add any per-frame visual updates here
+    -- Most updates happen in on_message when we receive SIM_TICK
+end
+
+function on_message(self, message_id, message, sender)
+    if not sim_bridge.initialized then
+        return
+    end
+    
+    if message_id == SIM_TICK then
+        handle_sim_tick()
+    elseif message_id == SIM_SPAWN then
+        handle_sim_spawn(message)
+    elseif message_id == SIM_DESPAWN then
+        handle_sim_despawn(message)
+    elseif message_id == SIM_EVENT then
+        handle_sim_event(message)
+    end
+end
+
+function handle_sim_tick()
+    -- Pull the latest snapshots from C++
+    local prev_buffer, curr_buffer, alpha, tick = sim.read_snapshots()
+    
+    if not curr_buffer then
+        -- No data this frame, nothing to update
+        return
+    end
+    
+    -- Read streams from current buffer
+    streams.curr.id = buffer.get_stream(curr_buffer, hash("id"))
+    streams.curr.x = buffer.get_stream(curr_buffer, hash("x"))
+    streams.curr.y = buffer.get_stream(curr_buffer, hash("y"))
+    streams.curr.z = buffer.get_stream(curr_buffer, hash("z"))
+    streams.curr.vx = buffer.get_stream(curr_buffer, hash("vx"))
+    streams.curr.vy = buffer.get_stream(curr_buffer, hash("vy"))
+    streams.curr.ang = buffer.get_stream(curr_buffer, hash("ang"))
+    streams.curr.flags = buffer.get_stream(curr_buffer, hash("flags"))
+    
+    -- Read streams from previous buffer (if available)
+    if prev_buffer then
+        streams.prev.id = buffer.get_stream(prev_buffer, hash("id"))
+        streams.prev.x = buffer.get_stream(prev_buffer, hash("x"))
+        streams.prev.y = buffer.get_stream(prev_buffer, hash("y"))
+        streams.prev.z = buffer.get_stream(prev_buffer, hash("z"))
+        streams.prev.vx = buffer.get_stream(prev_buffer, hash("vx"))
+        streams.prev.vy = buffer.get_stream(prev_buffer, hash("vy"))
+        streams.prev.ang = buffer.get_stream(prev_buffer, hash("ang"))
+        streams.prev.flags = buffer.get_stream(prev_buffer, hash("flags"))
+    end
+    
+    -- Get buffer info
+    local count = buffer.get_size(curr_buffer)
+    
+    -- Reusable entity data table to avoid allocations
+    local entity_data = {}
+    
+    -- Update visuals for each entity in the snapshot
+    for i = 1, count do
+        local entity_id = streams.curr.id[i]
+        
+        -- Interpolate positions if we have previous data
+        local x, y, z
+        if prev_buffer and streams.prev.x then
+            x = streams.prev.x[i] + (streams.curr.x[i] - streams.prev.x[i]) * alpha
+            y = streams.prev.y[i] + (streams.curr.y[i] - streams.prev.y[i]) * alpha
+            z = streams.prev.z[i] + (streams.curr.z[i] - streams.prev.z[i]) * alpha
+        else
+            x = streams.curr.x[i]
+            y = streams.curr.y[i]
+            z = streams.curr.z[i]
+        end
+        
+        -- Reuse the table to avoid allocations
+        entity_data.x = x
+        entity_data.y = y
+        entity_data.z = z
+        entity_data.vx = streams.curr.vx[i] or 0
+        entity_data.vy = streams.curr.vy[i] or 0
+        entity_data.facing_angle = streams.curr.ang[i] or 0
+        entity_data.flags = streams.curr.flags[i] or 0
+        
+        visual_manager.update_from_snapshot(entity_id, entity_data)
+    end
+    
+    sim_bridge.last_tick = tick
+end
+
+function handle_sim_spawn(message)
+    local entity_id = message.id
+    local archetype = message.archetype
+    local x, y, z = message.x, message.y, message.z
+    
+    -- Get visual configuration for this archetype
+    local visual_config = visual_manager.get_archetype_config(archetype)
+    
+    if visual_config then
+        visual_manager.attach(entity_id, visual_config, {x = x, y = y, z = z})
+    else
+        print("WARNING: No visual config for archetype: " .. tostring(archetype))
+    end
+end
+
+function handle_sim_despawn(message)
+    local entity_id = message.id
+    visual_manager.detach(entity_id)
+end
+
+function handle_sim_event(message)
+    local entity_id = message.id
+    local event_type = message.type
+    local event_data = message.data or {}
+    
+    visual_manager.handle_event(entity_id, event_type, event_data)
+end
+
+function final(self)
+    -- Cleanup
+    if visual_manager then
+        visual_manager.cleanup()
+    end
+end
+
+return sim_bridge

@@ -71,3 +71,11 @@ embedded_instances {
   "}\n"
   ""
 }
+embedded_instances {
+  id: "sim_bridge"
+  data: "components {\n"
+  "  id: \"sim_bridge\"\n"
+  "  component: \"/game/scripts/sim_bridge.script\"\n"
+  "}\n"
+  ""
+}

@@ -276,6 +276,26 @@ function update(self, dt)
             sim.move_observer(self.observer_id, 0, transform.grid_x, transform.grid_y)
         end
     end
+    
+    -- Update simulation state for animation system
+    if self.move_dx ~= 0 or self.move_dy ~= 0 then
+        -- Set movement state
+        sim.set_entity_state_flag(self.player_id, "moving", "true")
+        
+        -- Set facing direction
+        if self.move_dx > 0 then
+            sim.set_entity_state_flag(self.player_id, "facing", "east")
+        elseif self.move_dx < 0 then
+            sim.set_entity_state_flag(self.player_id, "facing", "west")
+        elseif self.move_dy > 0 then
+            sim.set_entity_state_flag(self.player_id, "facing", "north")
+        elseif self.move_dy < 0 then
+            sim.set_entity_state_flag(self.player_id, "facing", "south")
+        end
+    else
+        -- Not moving
+        sim.set_entity_state_flag(self.player_id, "moving", "false")
+    end
 end
 
 function on_message(self, message_id, message, sender)

@@ -1,0 +1,29 @@
+animations {
+  id: "idle_north"
+  images {
+    image: "/asset/img/player_north.png"
+  }
+  playback: PLAYBACK_LOOP_FORWARD
+}
+animations {
+  id: "idle_south"
+  images {
+    image: "/asset/img/player_south.png"
+  }
+  playback: PLAYBACK_LOOP_FORWARD
+}
+animations {
+  id: "idle_west"
+  images {
+    image: "/asset/img/player_west.png"
+  }
+  playback: PLAYBACK_LOOP_FORWARD
+}
+animations {
+  id: "idle_east"
+  images {
+    image: "/asset/img/player_east.png"
+  }
+  playback: PLAYBACK_LOOP_FORWARD
+}
+extrude_borders: 2
