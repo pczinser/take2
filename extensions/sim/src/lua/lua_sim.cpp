@@ -125,12 +125,12 @@ static int L_cmd_move_entity(lua_State* L) {
 static int L_cmd_spawn_entity(lua_State* L) {
     DM_LUA_STACK_CHECK(L, 0);
     
-    dmhash_t archetype = dmScript::CheckHash(L, 1);
+    dmhash_t prototype = dmScript::CheckHash(L, 1);
     float x = (float)luaL_checknumber(L, 2);
     float y = (float)luaL_checknumber(L, 3);
     float z = (float)luaL_optnumber(L, 4, 0.0);
     
-    Command cmd(CMD_SPAWN_ENTITY, 0, (uint64_t)archetype, 0, x, y, z);
+    Command cmd(CMD_SPAWN_ENTITY, 0, (uint64_t)prototype, 0, x, y, z);
     EnqueueCommand(cmd);
     return 0;
 }

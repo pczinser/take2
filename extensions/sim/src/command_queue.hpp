@@ -25,7 +25,7 @@ enum CommandType : uint32_t {
 struct Command {
     CommandType type;
     uint32_t entity_id;  // or observer_id for observer commands
-    uint64_t a, b;       // generic parameters (archetype hash, slot, etc.)
+    uint64_t a, b;       // generic parameters (prototype hash, slot, etc.)
     float x, y, z;       // position/floats
     
     Command(CommandType cmd_type, uint32_t id, uint64_t param_a, uint64_t param_b, float pos_x, float pos_y, float pos_z)

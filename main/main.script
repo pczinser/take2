@@ -2,6 +2,13 @@
 
 local entity_loader = require("game.scripts.module.entity.entity_loader")
 local cmd = require("game.scripts.command_queue")
+local bus = require("game.scripts.sim_bus")
+local sim = require("game.scripts.sim")
+
+local SIM_TICK = hash("sim_tick")
+local SIM_SPAWN = hash("sim_spawn")
+local SIM_DESPAWN = hash("sim_despawn")
+local SIM_EVENT = hash("sim_event")
 
 function init(self)
     --msg.post(".", "acquire_input_focus")
@@ -21,6 +28,11 @@ function init(self)
     -- List available prototypes (for debugging)
     entity_loader.list_prototypes()
 
+    -- Ensure bus is initialized and register as listener
+    bus.on_init(sim)
+    sim.register_listener(msg.url())
+    print("Main script: registered as sim listener")
+
     self.next_print = 0
 end
 
@@ -31,6 +43,22 @@ function update(self, dt)
     --     pprint(s)
     --     self.next_print = socket.gettime() + 2.0
     -- end
+end
+
+function on_message(self, message_id, message, sender)
+    if message_id == SIM_TICK then
+        print("Main script: received sim_tick, forwarding to bus")
+        bus.on_tick()
+    elseif message_id == SIM_SPAWN then
+        print("Main script: received sim_spawn, forwarding to bus")
+        bus.on_spawn(message)
+    elseif message_id == SIM_DESPAWN then
+        print("Main script: received sim_despawn, forwarding to bus")
+        bus.on_despawn(message)
+    elseif message_id == SIM_EVENT then
+        print("Main script: received sim_event, forwarding to bus")
+        bus.on_event(message)
+    end
 end
 
 function on_input(self, action_id, action)

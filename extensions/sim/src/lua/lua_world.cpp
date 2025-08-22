@@ -495,7 +495,7 @@ static int L_register_entity_prototypes(lua_State* L) {
         // Register the prototype
         RegisterEntityPrototype(prototype_name, prototype_id);
         // Map hash->name for command-based spawns
-        RegisterArchetypeHash(dmHashString64(prototype_name), prototype_name);
+        RegisterPrototypeHash(dmHashString64(prototype_name), prototype_name);
         
         lua_pop(L, 1);  // Remove template value, keep key for next iteration
     }
@@ -756,7 +756,7 @@ static const luaL_Reg sim_functions[] = {
     {"get_active_chunks", L_get_active_chunks},
     
     // Entity functions
-    {"create_entity", L_create_entity},
+    // {"create_entity", L_create_entity},   // disabled: use command queue cmd_spawn_entity
     {"get_entity", L_get_entity},
     {"destroy_entity", L_destroy_entity},
     {"move_entity", L_move_entity},

@@ -11,9 +11,9 @@ function command_queue.move_entity(entity_id, dx, dy)
 end
 
 -- Entity spawning/destruction
-function command_queue.spawn_entity(archetype, x, y, z)
+function command_queue.spawn_entity(prototype, x, y, z)
 	z = z or 0
-	sim.cmd_spawn_entity(hash(archetype), x, y, z)
+	sim.cmd_spawn_entity(hash(prototype), x, y, z)
 end
 
 function command_queue.destroy_entity(entity_id)
@@ -54,8 +54,8 @@ function command_queue.set_entity_state_flag(entity_id, flag, value)
 end
 
 -- Convenience functions for common operations
-function command_queue.place_building(archetype, x, y, floor)
-	command_queue.spawn_entity(archetype, x, y, floor)
+function command_queue.place_building(prototype, x, y, floor)
+	command_queue.spawn_entity(prototype, x, y, floor)
 end
 
 function command_queue.move_player(entity_id, dx, dy)

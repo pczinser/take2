@@ -105,14 +105,14 @@ void CommandQueue::ProcessMoveEntity(const Command& cmd) {
 }
 
 void CommandQueue::ProcessSpawnEntity(const Command& cmd) {
-    // cmd.a = archetype hash
+    // cmd.a = prototype hash
     // cmd.x, cmd.y = position
     // cmd.z = floor (as float, cast to int)
-    const char* name = GetArchetypeNameByHash(cmd.a);
+    const char* name = GetPrototypeNameByHash(cmd.a);
     if (name && name[0]) {
         CreateEntity(name, cmd.x, cmd.y, (int32_t)cmd.z);
     } else {
-        dmLogWarning("SpawnEntity: unknown archetype hash=%llu", (unsigned long long)cmd.a);
+        dmLogWarning("SpawnEntity: unknown prototype hash=%llu", (unsigned long long)cmd.a);
     }
 }
 

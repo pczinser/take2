@@ -72,10 +72,18 @@ embedded_instances {
   ""
 }
 embedded_instances {
-  id: "sim_bridge"
+  id: "sim_manager"
   data: "components {\n"
-  "  id: \"sim_bridge\"\n"
-  "  component: \"/game/scripts/sim_bridge.script\"\n"
+  "  id: \"sim_bus\"\n"
+  "  component: \"/game/scripts/sim_bus.script\"\n"
+  "}\n"
+  ""
+}
+embedded_instances {
+  id: "visual_manager"
+  data: "components {\n"
+  "  id: \"visual_manager\"\n"
+  "  component: \"/game/scripts/visual_manager.script\"\n"
   "}\n"
   ""
 }

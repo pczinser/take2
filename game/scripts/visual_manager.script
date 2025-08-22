@@ -1,0 +1,65 @@
+local bus = require("game.scripts.sim_bus")
+local sim = require("game.scripts.sim")
+local visual_manager = require("game.scripts.visual_manager")
+
+-- This script owns lifecycle and delegates logic to the visual_manager module
+
+function init(self)
+    -- Ensure module is initialized once
+    visual_manager.init()
+    bus.subscribe(msg.url())
+end
+
+function on_message(self, message_id, message, sender)
+    if message_id == hash("bus_tick") then
+        -- Get snapshot data from the sim_bus (which already read it)
+        local prev, curr, alpha, tick = bus.get_snapshots()
+        
+        if not curr then return end
+        
+        local streams = {
+            curr = {
+                id = buffer.get_stream(curr, hash("id")),
+                x = buffer.get_stream(curr, hash("x")),
+                y = buffer.get_stream(curr, hash("y")),
+                z = buffer.get_stream(curr, hash("z")),
+                vx = buffer.get_stream(curr, hash("vx")),
+                vy = buffer.get_stream(curr, hash("vy")),
+                ang = buffer.get_stream(curr, hash("ang")),
+                flags = buffer.get_stream(curr, hash("flags")),
+            }
+        }
+
+        if prev then
+            streams.prev = {
+                id = buffer.get_stream(prev, hash("id")),
+                x = buffer.get_stream(prev, hash("x")),
+                y = buffer.get_stream(prev, hash("y")),
+                z = buffer.get_stream(prev, hash("z")),
+                vx = buffer.get_stream(prev, hash("vx")),
+                vy = buffer.get_stream(prev, hash("vy")),
+                ang = buffer.get_stream(prev, hash("ang")),
+                flags = buffer.get_stream(prev, hash("flags")),
+            }
+        end
+
+        -- Delegate to the module to update visuals
+        if visual_manager.on_snapshot_tick then
+            visual_manager.on_snapshot_tick(streams, alpha, sim)
+        end
+    elseif message_id == hash("bus_spawn") then
+        -- Optional immediate handling (module may ignore)
+        if visual_manager.on_spawn then visual_manager.on_spawn(message) end
+    elseif message_id == hash("bus_despawn") then
+        if visual_manager.on_despawn then visual_manager.on_despawn(message) end
+    elseif message_id == hash("bus_event") then
+        if visual_manager.on_event then visual_manager.on_event(message) end
+    end
+end
+
+function final(self)
+    bus.unsubscribe(msg.url())
+    if visual_manager.cleanup then visual_manager.cleanup() end
+end
+
+

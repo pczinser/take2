@@ -326,12 +326,12 @@ void RegisterDefaultEntityPrototypes() {
     printf("Default entity prototypes will be registered by Lua\n");
 }
 
-// Hash-to-name mapping for commands
-void RegisterArchetypeHash(uint64_t name_hash, const std::string& name) {
+// Prototype hash mapping for commands
+void RegisterPrototypeHash(uint64_t name_hash, const std::string& name) {
     g_proto_hash_to_name[name_hash] = name;
 }
 
-const char* GetArchetypeNameByHash(uint64_t name_hash) {
+const char* GetPrototypeNameByHash(uint64_t name_hash) {
     auto it = g_proto_hash_to_name.find(name_hash);
     if (it != g_proto_hash_to_name.end()) return it->second.c_str();
     return "";
