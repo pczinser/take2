@@ -13,6 +13,7 @@ namespace simcore {
 static std::vector<Entity> g_entities;
 static EntityId g_next_entity_id = 1;
 static std::unordered_map<std::string, EntityPrototype> g_entity_prototypes;
+static std::unordered_map<uint64_t, std::string> g_proto_hash_to_name;
 
 // Efficient chunk-to-entity mapping for spatial queries
 static std::unordered_map<int64_t, std::vector<EntityId>> g_chunk_entities;
@@ -317,11 +318,23 @@ EntityPrototype* GetEntityPrototype(const std::string& name) {
 
 void ClearEntityPrototypes() {
     g_entity_prototypes.clear();
+    g_proto_hash_to_name.clear();
 }
 
 void RegisterDefaultEntityPrototypes() {
     // This will be handled by Lua registration now
     printf("Default entity prototypes will be registered by Lua\n");
+}
+
+// Hash-to-name mapping for commands
+void RegisterArchetypeHash(uint64_t name_hash, const std::string& name) {
+    g_proto_hash_to_name[name_hash] = name;
+}
+
+const char* GetArchetypeNameByHash(uint64_t name_hash) {
+    auto it = g_proto_hash_to_name.find(name_hash);
+    if (it != g_proto_hash_to_name.end()) return it->second.c_str();
+    return "";
 }
 
 // === COMPONENT CLONING ===
@@ -361,6 +374,12 @@ void CloneComponentsFromEntity(EntityId source_id, EntityId target_id, float gri
     components::InventoryComponent* source_inventory = components::g_inventory_components.GetComponent(source_id);
     if (source_inventory) {
         components::g_inventory_components.AddComponent(target_id, *source_inventory);
+    }
+    
+    // Clone anim state component
+    components::AnimStateComponent* source_anim = components::g_animstate_components.GetComponent(source_id);
+    if (source_anim) {
+        components::g_animstate_components.AddComponent(target_id, *source_anim);
     }
     
     printf("Cloned all components from entity %d to entity %d\n", source_id, target_id);
@@ -479,6 +498,7 @@ void InitializeEntitySystem() {
     g_entities.clear();
     g_next_entity_id = 1;
     g_entity_prototypes.clear();
+    g_proto_hash_to_name.clear();
     g_chunk_entities.clear();
     g_current_floor_z = 0;
     
@@ -492,6 +512,7 @@ void ClearEntitySystem() {
     g_entities.clear();
     g_next_entity_id = 1;
     g_entity_prototypes.clear();
+    g_proto_hash_to_name.clear();
     g_chunk_entities.clear();
     
     printf("Entity system cleared\n");

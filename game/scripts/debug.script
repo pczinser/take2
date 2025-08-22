@@ -1,168 +1,175 @@
 -- Simple Building Placement Test Script
 
+local cmd = require("game.scripts.command_queue")
+
 function init(self)
-    msg.post(".", "acquire_input_focus")
-    print("=== BUILDING PLACEMENT TEST ===")
-    print("Press 1 to test single-tile building placement")
-    print("Press 2 to test multi-tile building placement")
-    print("Press C to clear test")
-    print("==============================")
-    
-    -- Initialize test state
-    self.test_building_id = nil
-    self.test_location = {x = 10, y = 10, floor = 0}
-    self.test_multi_building_id = nil
-    self.test_multi_location = {x = 15, y = 15, floor = 0}  -- 2x2 building will occupy 15,15 -> 16,16
+	msg.post(".", "acquire_input_focus")
+	print("=== BUILDING PLACEMENT TEST ===")
+	print("Press 1 to test single-tile building placement")
+	print("Press 2 to test multi-tile building placement")
+	print("Press C to clear test")
+	print("==============================")
+	
+	-- Initialize test state
+	self.test_building_id = nil
+	self.test_location = {x = 10, y = 10, floor = 0}
+	self.test_multi_building_id = nil
+	self.test_multi_location = {x = 15, y = 15, floor = 0}  -- 2x2 building will occupy 15,15 -> 16,16
 end
 
 function on_input(self, action_id, action)
-    if not action.pressed then return end
-    
-    if action_id == hash("key_1") then
-        test_building_placement(self)
-    elseif action_id == hash("key_2") then
-        test_multi_tile_building_placement(self)
-    elseif action_id == hash("key_c") then
-        -- Clear test by destroying the buildings
-        if self.test_building_id then
-            sim.destroy_entity(self.test_building_id)
-            self.test_building_id = nil
-        end
-        if self.test_multi_building_id then
-            sim.destroy_entity(self.test_multi_building_id)
-            self.test_multi_building_id = nil
-        end
-        print("Test buildings destroyed")
-        print("Test cleared")
-    end
+	if not action.pressed then return end
+	
+	if action_id == hash("key_1") then
+		test_building_placement(self)
+	elseif action_id == hash("key_2") then
+		test_multi_tile_building_placement(self)
+	elseif action_id == hash("key_c") then
+		-- Clear test by destroying the buildings (async via command queue)
+		if self.test_building_id then
+			cmd.destroy_entity(self.test_building_id)
+			self.test_building_id = nil
+		end
+		if self.test_multi_building_id then
+			cmd.destroy_entity(self.test_multi_building_id)
+			self.test_multi_building_id = nil
+		end
+		print("Test buildings destroyed (commands enqueued)")
+		print("Test cleared")
+	end
+end
+
+local function resolve_entity_id_at_tile(floor, x, y, prototype_name)
+	local ids = sim.get_entities_at_tile(floor, x, y)
+	for _, id in ipairs(ids) do
+		local e = sim.get_entity(id)
+		if e and e.prototype_name == prototype_name then
+			return id
+		end
+	end
+	return nil
+end
+
+local function after_tick(delay_s, fn)
+	timer.delay(delay_s or 0.05, false, fn)
 end
 
 function test_building_placement(self)
-    print("\n--- Single-Tile Building Placement Test ---")
-    
-    if not self.test_building_id then
-        -- First attempt: place building
-        print(string.format("Attempting to place building at grid (%d, %d) on floor %d", 
-               self.test_location.x, self.test_location.y, self.test_location.floor))
-        
-        local building_id = sim.create_entity("crafting_building", 
-                                            self.test_location.x, 
-                                            self.test_location.y, 
-                                            self.test_location.floor)
-        
-        if building_id > 0 then
-            self.test_building_id = building_id
-            print("✅ SUCCESS: Building placed with ID " .. building_id)
-            print("Press 1 again to test collision detection")
-        else
-            print("❌ FAILED: Could not place building")
-        end
-    else
-        -- Second attempt: should fail due to collision
-        print(string.format("Attempting to place another building at grid (%d, %d) on floor %d", 
-               self.test_location.x, self.test_location.y, self.test_location.floor))
-        print("(Location should be occupied by building " .. self.test_building_id .. ")")
-        
-        local second_building_id = sim.create_entity("crafting_building", 
-                                                   self.test_location.x, 
-                                                   self.test_location.y, 
-                                                   self.test_location.floor)
-        
-        if second_building_id <= 0 then
-            print("✅ SUCCESS: Collision detection working - second building placement blocked")
-        else
-            print("❌ FAILED: Collision detection not working - two buildings at same location!")
-            print("Building 1: " .. self.test_building_id)
-            print("Building 2: " .. second_building_id)
-            
-            -- Check what entities are actually at that location
-            local entities_at_location = sim.get_entities_at_tile(self.test_location.floor, 
-                                                                 self.test_location.x, 
-                                                                 self.test_location.y)
-            print("Entities at location: " .. #entities_at_location)
-            for i, entity_id in ipairs(entities_at_location) do
-                print("  Entity " .. i .. ": " .. entity_id)
-            end
-        end
-    end
+	print("\n--- Single-Tile Building Placement Test ---")
+	
+	if not self.test_building_id then
+		-- First attempt: place building (enqueue command)
+		print(string.format("Attempting to place building at grid (%d, %d) on floor %d", 
+		       self.test_location.x, self.test_location.y, self.test_location.floor))
+		
+		cmd.spawn_entity("crafting_building", 
+			self.test_location.x, 
+			self.test_location.y, 
+			self.test_location.floor)
+		
+		-- Resolve entity ID after the sim processes the command
+		after_tick(0.05, function()
+			local id = resolve_entity_id_at_tile(self.test_location.floor, self.test_location.x, self.test_location.y, "crafting_building")
+			if id then
+				self.test_building_id = id
+				print("✅ SUCCESS: Building placed with ID " .. id)
+				print("Press 1 again to test collision detection")
+			else
+				print("⌛ Waiting for building to appear (try pressing 1 again if needed)")
+			end
+		end)
+	else
+		-- Second attempt: should fail due to collision
+		print(string.format("Attempting to place another building at grid (%d, %d) on floor %d", 
+		       self.test_location.x, self.test_location.y, self.test_location.floor))
+		print("(Location should be occupied by building " .. self.test_building_id .. ")")
+		
+		cmd.spawn_entity("crafting_building", 
+			self.test_location.x, 
+			self.test_location.y, 
+			self.test_location.floor)
+		
+		after_tick(0.05, function()
+			local ids = sim.get_entities_at_tile(self.test_location.floor, self.test_location.x, self.test_location.y)
+			if #ids <= 1 then
+				print("✅ SUCCESS: Collision detection working - second building placement blocked")
+			else
+				print("❌ FAILED: Collision detection not working - overlapping buildings placed!")
+				print("Entities at location: " .. #ids)
+			end
+		end)
+	end
 end
 
 function test_multi_tile_building_placement(self)
-    print("\n--- Multi-Tile Building Placement Test ---")
-    
-    if not self.test_multi_building_id then
-        -- First attempt: place 2x2 building
-        print(string.format("Attempting to place 2x2 building at grid (%d, %d) on floor %d", 
-               self.test_multi_location.x, self.test_multi_location.y, self.test_multi_location.floor))
-        print("This building will occupy tiles: (%d,%d), (%d,%d), (%d,%d), (%d,%d)", 
-               self.test_multi_location.x, self.test_multi_location.y,
-               self.test_multi_location.x+1, self.test_multi_location.y,
-               self.test_multi_location.x, self.test_multi_location.y+1,
-               self.test_multi_location.x+1, self.test_multi_location.y+1)
-        
-        local building_id = sim.create_entity("stone_extractor",  -- Use stone_extractor which should be 2x2
-                                            self.test_multi_location.x, 
-                                            self.test_multi_location.y, 
-                                            self.test_multi_location.floor)
-        
-        if building_id > 0 then
-            self.test_multi_building_id = building_id
-            print("✅ SUCCESS: 2x2 building placed with ID " .. building_id)
-            print("Press 2 again to test partial overlap collision detection")
-        else
-            print("❌ FAILED: Could not place 2x2 building")
-        end
-    else
-        -- Second attempt: try to place another 2x2 building with partial overlap
-        local overlap_x = self.test_multi_location.x - 1  -- 14,14 will overlap at 15,15
-        local overlap_y = self.test_multi_location.y - 1
-        
-        print(string.format("Attempting to place another 2x2 building at grid (%d, %d) on floor %d", 
-               overlap_x, overlap_y, self.test_multi_location.floor))
-        print("This building will occupy tiles: (%d,%d), (%d,%d), (%d,%d), (%d,%d)", 
-               overlap_x, overlap_y, overlap_x+1, overlap_y, overlap_x, overlap_y+1, overlap_x+1, overlap_y+1)
-        print("Should overlap with existing building at tile (%d, %d)", 
-               self.test_multi_location.x, self.test_multi_location.y)
-        
-        local second_building_id = sim.create_entity("stone_extractor", 
-                                                   overlap_x, 
-                                                   overlap_y, 
-                                                   self.test_multi_location.floor)
-        
-        if second_building_id <= 0 then
-            print("✅ SUCCESS: Partial overlap collision detection working - second building placement blocked")
-        else
-            print("❌ FAILED: Partial overlap collision detection not working - overlapping buildings placed!")
-            print("Building 1: " .. self.test_multi_building_id .. " at (" .. self.test_multi_location.x .. "," .. self.test_multi_location.y .. ")")
-            print("Building 2: " .. second_building_id .. " at (" .. overlap_x .. "," .. overlap_y .. ")")
-            
-            -- Check what entities are at the overlapping tile
-            local entities_at_overlap = sim.get_entities_at_tile(self.test_multi_location.floor, 
-                                                                 self.test_multi_location.x, 
-                                                                 self.test_multi_location.y)
-            print("Entities at overlap tile (" .. self.test_multi_location.x .. "," .. self.test_multi_location.y .. "): " .. #entities_at_overlap)
-            for i, entity_id in ipairs(entities_at_overlap) do
-                print("  Entity " .. i .. ": " .. entity_id)
-            end
-        end
-    end
+	print("\n--- Multi-Tile Building Placement Test ---")
+	
+	if not self.test_multi_building_id then
+		-- First attempt: place 2x2 building (enqueue command)
+		print(string.format("Attempting to place 2x2 building at grid (%d, %d) on floor %d", 
+		       self.test_multi_location.x, self.test_multi_location.y, self.test_multi_location.floor))
+		print("This building will occupy tiles: (%d,%d), (%d,%d), (%d,%d), (%d,%d)", 
+		       self.test_multi_location.x, self.test_multi_location.y,
+		       self.test_multi_location.x+1, self.test_multi_location.y,
+		       self.test_multi_location.x, self.test_multi_location.y+1,
+		       self.test_multi_location.x+1, self.test_multi_location.y+1)
+		
+		cmd.spawn_entity("stone_extractor",  -- 2x2
+			self.test_multi_location.x, 
+			self.test_multi_location.y, 
+			self.test_multi_location.floor)
+		
+		after_tick(0.05, function()
+			local id = resolve_entity_id_at_tile(self.test_multi_location.floor, self.test_multi_location.x, self.test_multi_location.y, "stone_extractor")
+			if id then
+				self.test_multi_building_id = id
+				print("✅ SUCCESS: 2x2 building placed with ID " .. id)
+				print("Press 2 again to test partial overlap collision detection")
+			else
+				print("⌛ Waiting for 2x2 building to appear (try pressing 2 again if needed)")
+			end
+		end)
+	else
+		-- Second attempt: try to place another 2x2 building with partial overlap
+		local overlap_x = self.test_multi_location.x - 1  -- 14,14 will overlap at 15,15
+		local overlap_y = self.test_multi_location.y - 1
+		
+		print(string.format("Attempting to place another 2x2 building at grid (%d, %d) on floor %d", 
+		       overlap_x, overlap_y, self.test_multi_location.floor))
+		print("This building will occupy tiles: (%d,%d), (%d,%d), (%d,%d), (%d,%d)", 
+		       overlap_x, overlap_y, overlap_x+1, overlap_y, overlap_x, overlap_y+1, overlap_x+1, overlap_y+1)
+		print("Should overlap with existing building at tile (%d, %d)", 
+		       self.test_multi_location.x, self.test_multi_location.y)
+		
+		cmd.spawn_entity("stone_extractor", overlap_x, overlap_y, self.test_multi_location.floor)
+		
+		after_tick(0.05, function()
+			local at_base = sim.get_entities_at_tile(self.test_multi_location.floor, self.test_multi_location.x, self.test_multi_location.y)
+			if #at_base == 1 then
+				print("✅ SUCCESS: Partial overlap collision detection working - second building placement blocked")
+			else
+				print("❌ FAILED: Partial overlap collision detection not working - overlapping buildings placed!")
+				print("Entities at overlap base tile (" .. self.test_multi_location.x .. "," .. self.test_multi_location.y .. "): " .. #at_base)
+			end
+		end)
+	end
 end
 
 function update(self, dt)
-    -- Let the simulation run
+	-- Let the simulation run
 end
 
 function on_message(self, message_id, message, sender)
-    -- Handle any messages
+	-- Handle any messages
 end
 
 function final(self)
-    -- Clean up test buildings if they exist
-    if self.test_building_id then
-        sim.destroy_entity(self.test_building_id)
-    end
-    if self.test_multi_building_id then
-        sim.destroy_entity(self.test_multi_building_id)
-    end
-    print("Building placement test script terminated")
+	-- Clean up test buildings if they exist
+	if self.test_building_id then
+		cmd.destroy_entity(self.test_building_id)
+	end
+	if self.test_multi_building_id then
+		cmd.destroy_entity(self.test_multi_building_id)
+	end
+	print("Building placement test script terminated")
 end

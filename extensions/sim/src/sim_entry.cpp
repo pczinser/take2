@@ -17,8 +17,9 @@
 #include "items.hpp"
 #include "components/component_registry.hpp"
 
-#include "lua/lua_bindings.hpp"   // for LuaRegister_Sim
+#include "lua/lua_bindings.hpp"   // for all Lua registrations
 #include "sim_entry.hpp"          // header declaring the C API used by lua_sim.cpp
+#include "command_queue.hpp"      // for command queue integration
 
 namespace simcore {
 
@@ -104,14 +105,21 @@ static void CreateAndFillSnapshot(dmBuffer::HBuffer& out_buf) {
             continue;
         }
 
-        // TODO: replace placeholders with your component reads
-        xp[i]   = /* Transform.x */ 0.0f;
-        yp[i]   = /* Transform.y */ 0.0f;
-        zp[i]   = /* Transform.z */ 0.0f;
-        vxp[i]  = /* Velocity.x  */ 0.0f;
-        vyp[i]  = /* Velocity.y  */ 0.0f;
-        angp[i] = /* Facing(rad) */ 0.0f;
-        flagsp[i] = /* bitfield   */ 0u;
+        // Read components
+        const components::TransformComponent* t = components::g_transform_components.GetComponent(row.id);
+        const components::AnimStateComponent* s = components::g_animstate_components.GetComponent(row.id);
+
+        if (t) {
+            xp[i]   = t->grid_x * 64.0f;  // Convert grid to world units
+            yp[i]   = t->grid_y * 64.0f;
+            zp[i]   = (float)t->floor_z;
+            vxp[i]  = 0.0f;  // TODO: velocity from physics
+            vyp[i]  = 0.0f;
+        } else {
+            xp[i]=yp[i]=zp[i]=vxp[i]=vyp[i]=0.0f;
+        }
+        angp[i] = s ? s->facing_angle : 0.0f;
+        flagsp[i] = s ? s->flags : 0u;
     }
 
     out_buf = buf;
@@ -132,13 +140,16 @@ static void StepOneTick(float dt_fixed) {
     s_fixed_dt = dt_fixed;
     ++s_current_tick;
 
-    // 1) advance systems (authoritative)
+    // 1) Process any queued commands first (deterministic ordering)
+    ProcessCommandQueue(s_current_tick);
+
+    // 2) advance systems (authoritative)
     RebuildActivationUnion();
     Portal_Step((int32_t)(dt_fixed * 1000.0f), (int64_t)(NowSeconds() * 1000.0));
     Extractor_Step(dt_fixed);
     // Inventory_Tick(dt_fixed); // uncomment if you tick inventory here
 
-    // 2) rotate buffers: destroy the older 'prev', move 'curr' to 'prev', create a new 'curr'
+    // 3) rotate buffers: destroy the older 'prev', move 'curr' to 'prev', create a new 'curr'
     if (s_prev_snapshot) {
         dmBuffer::Destroy(s_prev_snapshot);
         s_prev_snapshot = 0;
@@ -147,7 +158,7 @@ static void StepOneTick(float dt_fixed) {
     s_curr_snapshot = 0;
     CreateAndFillSnapshot(s_curr_snapshot);
 
-    // 3) clear edge-triggered event queues
+    // 4) clear edge-triggered event queues
     Events_Clear();
 }
 
@@ -169,7 +180,7 @@ static dmExtension::Result Initialize(dmExtension::Params* params) {
     Inventory_Init();
 
     // Register Lua API
-    LuaRegister_Sim(params->m_L);
+    LuaRegister_All(params->m_L);
     return dmExtension::RESULT_OK;
 }
 

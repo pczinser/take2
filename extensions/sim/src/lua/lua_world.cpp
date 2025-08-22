@@ -11,6 +11,7 @@
 #include <string>
 #include <cstdio>
 #include <cmath>
+#include <dmsdk/dlib/hash.h>
 
 namespace simcore {
 
@@ -493,6 +494,8 @@ static int L_register_entity_prototypes(lua_State* L) {
         
         // Register the prototype
         RegisterEntityPrototype(prototype_name, prototype_id);
+        // Map hash->name for command-based spawns
+        RegisterArchetypeHash(dmHashString64(prototype_name), prototype_name);
         
         lua_pop(L, 1);  // Remove template value, keep key for next iteration
     }

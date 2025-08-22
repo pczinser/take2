@@ -2,6 +2,7 @@
 #include <cstdint>
 #include <dmsdk/dlib/buffer.h>
 #include <dmsdk/dlib/message.h>
+#include "command_queue.hpp"  // For Command type
 
 namespace simcore {
 
@@ -23,5 +24,8 @@ float    GetLastAlpha();                        // interpolation leftover [0..1)
 void SetSimHz(double hz);
 void SetSimPaused(bool paused);
 void StepSimNTicks(int n);
+
+// Command queue
+void EnqueueCommand(const Command& cmd);
 
 } // namespace simcore

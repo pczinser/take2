@@ -50,6 +50,10 @@ EntityPrototype* GetEntityPrototype(const std::string& name);
 void ClearEntityPrototypes();
 void RegisterDefaultEntityPrototypes();
 
+// Hash-to-name mapping for commands
+void RegisterArchetypeHash(uint64_t name_hash, const std::string& name);
+const char* GetArchetypeNameByHash(uint64_t name_hash);
+
 // === COMPONENT CREATION ===
 // REMOVE THIS LINE - it doesn't belong in the C++ core:
 // void CreateComponentInstancesFromLua(EntityId entity_id, const std::string& prototype_name, lua_State* L, int prototype_index, float grid_x, float grid_y, int32_t floor_z);

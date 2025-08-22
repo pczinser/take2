@@ -1,6 +1,7 @@
 -- Main script - handles game initialization and global systems
 
-local entity_loader = require("game.scripts.entity_loader")
+local entity_loader = require("game.scripts.module.entity.entity_loader")
+local cmd = require("game.scripts.command_queue")
 
 function init(self)
     --msg.post(".", "acquire_input_focus")
@@ -10,12 +11,9 @@ function init(self)
     sim.pause(false)
 
     -- Spawn three floors at explicit Z (supports negatives for basements)
-    sim.spawn_floor_at_z(-1, 2, 2, 32, 32) -- basement
-    sim.spawn_floor_at_z( 0, 2, 2, 32, 32) -- ground
-    sim.spawn_floor_at_z( 1, 2, 2, 32, 32) -- first floor
-
-    -- Demo portal: from z=0 (chunk 0,0 tile 0,0) to z=1 (chunk 1,1 tile 31,31)
-    sim.add_portal(0, 0, 0, 0, 0,   1, 1, 1, 31, 31)
+    cmd.spawn_floor_at_z(-1, 2, 2, 32, 32) -- basement
+    cmd.spawn_floor_at_z( 0, 2, 2, 32, 32) -- ground
+    cmd.spawn_floor_at_z( 1, 2, 2, 32, 32) -- first floor
 
     -- Initialize entity system (only register prototypes)
     entity_loader.init()

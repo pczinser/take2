@@ -77,5 +77,12 @@ struct InventoryComponent {
     InventoryComponent(const std::vector<InventorySlot>& slot_list) : slots(slot_list) {}
 };
 
+// Animation/state flags used for visuals
+struct AnimStateComponent {
+    uint32_t flags;        // bitfield aligned with visual_manager
+    float facing_angle;    // optional radians
+    AnimStateComponent() : flags(0), facing_angle(0.0f) {}
+};
+
 } // namespace components
 } // namespace simcore

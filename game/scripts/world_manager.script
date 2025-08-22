@@ -1,24 +1,29 @@
 -- Attached to world_manager game object
-local world = require("game.scripts.world")
+local world = require("game.scripts.module.world.world")
 
 local world_manager = {
     loaded_chunks = {},  -- Track which chunks are loaded
-    observer_config = nil
+    observer_config = nil,
+    initialized = false  -- Track if we have an observer and can start loading chunks
 }
 
 function init(self)
-    -- Get observer configuration from simulation
-    self.observer_config = world.get_observer_config()
-    
-    if self.observer_config then
-        print("World manager initialized - Hot radius: " .. self.observer_config.hot_chunk_radius .. " chunks")
-    end
-    
-    -- Load initial chunks
-    load_active_chunks()
+    print("World manager starting - waiting for observer...")
+    -- Don't load chunks yet, wait for observer to be available
 end
 
 function update(self, dt)
+    -- Check if we have an observer yet
+    if not self.initialized then
+        self.observer_config = world.get_observer_config()
+        if self.observer_config then
+            print("World manager initialized - Hot radius: " .. self.observer_config.hot_chunk_radius .. " chunks")
+            self.initialized = true
+        else
+            return  -- Still waiting for observer
+        end
+    end
+    
     -- Check for new chunks to load
     load_active_chunks()
 end

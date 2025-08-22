@@ -1,5 +1,5 @@
 -- Attached to tilemap game object in chunk.collection
-local world = require("game.scripts.world")
+local world = require("game.scripts.module.world.world")
 
 local chunk = {}
 

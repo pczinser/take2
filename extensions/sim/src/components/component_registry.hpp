@@ -11,6 +11,7 @@ extern ComponentManager<TransformComponent> g_transform_components;
 extern ComponentManager<ProductionComponent> g_production_components;
 extern ComponentManager<HealthComponent> g_health_components;
 extern ComponentManager<InventoryComponent> g_inventory_components;
+extern ComponentManager<AnimStateComponent> g_animstate_components;
 
 // Component system initialization and cleanup
 void InitializeComponentSystem();
