@@ -44,14 +44,6 @@ embedded_instances {
   ""
 }
 embedded_instances {
-  id: "debug"
-  data: "components {\n"
-  "  id: \"component_system_test\"\n"
-  "  component: \"/game/scripts/debug.script\"\n"
-  "}\n"
-  ""
-}
-embedded_instances {
   id: "world_manager"
   data: "components {\n"
   "  id: \"world_manager\"\n"
@@ -84,6 +76,12 @@ embedded_instances {
   data: "components {\n"
   "  id: \"visual_manager\"\n"
   "  component: \"/game/scripts/visual_manager.script\"\n"
+  "}\n"
+  "embedded_components {\n"
+  "  id: \"entity_factory\"\n"
+  "  type: \"factory\"\n"
+  "  data: \"prototype: \\\"/game/go/entity.go\\\"\\n"
+  "\"\n"
   "}\n"
   ""
 }

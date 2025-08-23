@@ -34,6 +34,12 @@ function init(self)
     print("Main script: registered as sim listener")
 
     self.next_print = 0
+
+    -- TEST ONLY: Spawn a player entity at grid (0,0) on floor 0
+    -- This block can be removed once normal gameplay spawning is in place.
+    print("TEST: creating player entity at (0,0,0)...")
+    cmd.spawn_entity("player", 0, 0, 0)
+    print("TEST: spawn command enqueued for player")
 end
 
 function update(self, dt)
@@ -47,16 +53,12 @@ end
 
 function on_message(self, message_id, message, sender)
     if message_id == SIM_TICK then
-        print("Main script: received sim_tick, forwarding to bus")
         bus.on_tick()
     elseif message_id == SIM_SPAWN then
-        print("Main script: received sim_spawn, forwarding to bus")
         bus.on_spawn(message)
     elseif message_id == SIM_DESPAWN then
-        print("Main script: received sim_despawn, forwarding to bus")
         bus.on_despawn(message)
     elseif message_id == SIM_EVENT then
-        print("Main script: received sim_event, forwarding to bus")
         bus.on_event(message)
     end
 end

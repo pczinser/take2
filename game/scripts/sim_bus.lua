@@ -20,7 +20,6 @@ end
 function M.subscribe(subscriber_url)
 	if not subscriber_url then return end
 	table.insert(M.subscribers, subscriber_url)
-	print("Sim bus: subscriber added, total subscribers:", #M.subscribers)
 end
 
 function M.unsubscribe(subscriber_url)
@@ -39,7 +38,6 @@ function M.get_snapshots()
 end
 
 function M.on_tick()
-	print("Sim bus: on_tick called")
 	if not M.sim then 
 		print("Sim bus: no sim API available")
 		return 
@@ -53,7 +51,6 @@ function M.on_tick()
 	M.current_snapshots.tick = tick
 	
 	-- Send notification messages to all subscribers (no data, just notification)
-	print("Sim bus: sending tick notifications to", #M.subscribers, "subscribers")
 	for i = 1, #M.subscribers do
 		local subscriber_url = M.subscribers[i]
 		msg.post(subscriber_url, "bus_tick")

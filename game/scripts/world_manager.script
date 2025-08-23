@@ -27,7 +27,6 @@ end
 
 function on_message(self, message_id, message, sender)
     if message_id == hash("bus_tick") then
-        print("World manager received bus_tick!")
         -- Check if we have an observer yet
         if not world_manager.initialized then
             world_manager.observer_config = world.get_observer_config()
@@ -35,8 +34,6 @@ function on_message(self, message_id, message, sender)
                 print("World manager initialized - Hot radius: " .. world_manager.observer_config.hot_chunk_radius .. " chunks")
                 world_manager.initialized = true
             else
-                -- Still waiting for observer
-                print("World manager still waiting for observer...")
                 return
             end
         end
@@ -53,7 +50,6 @@ end
 -- Only spawn visual chunks for hot chunks
 function load_active_chunks()
     local visual_chunks = world.get_visual_chunks(0)  -- Only hot chunks
-    print("Visual chunks count:", #visual_chunks)
     
     -- Create a set of chunks that should be loaded
     local should_load_chunks = {}
@@ -74,8 +70,6 @@ function load_active_chunks()
         local chunk_key = string.format("%d_%d_%d", chunk_data.floor_z, chunk_data.chunk_x, chunk_data.chunk_y)
         
         if not world_manager.loaded_chunks[chunk_key] then
-            print("Attempting to create chunk at:", chunk_data.floor_z, chunk_data.chunk_x, chunk_data.chunk_y)
-            print("Current game object ID:", go.get_id())
             
             -- Spawn chunk collection using relative addressing (now in correct context)
             local chunk_ids = collectionfactory.create("#chunk_factory")
@@ -100,7 +94,7 @@ function load_active_chunks()
                         tilemap_id = tilemap_id,
                         collection_root_id = collection_root_id
                     }
-                    print(string.format("Loaded chunk z=%d cx=%d cy=%d", chunk_data.floor_z, chunk_data.chunk_x, chunk_data.chunk_y))
+                    -- Loaded chunk
                 else
                     print("ERROR: Could not extract collection root ID from tilemap:", tilemap_id)
                 end

@@ -98,7 +98,7 @@ end
 
 function visual_manager.attach(entity_id, visual_config, position)
     -- Create game object via factory
-    local go_id = factory.create(visual_manager.factory_url)
+    local go_id = factory.create(visual_manager.factory_url, position, nil, { entity_id = entity_id })
     if not go_id then
         print("ERROR: Failed to create entity game object")
         return
