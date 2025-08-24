@@ -12,8 +12,9 @@ namespace simcore {
 // Entity storage
 static std::vector<Entity> g_entities;
 static EntityId g_next_entity_id = 1;
-static std::unordered_map<std::string, EntityPrototype> g_entity_prototypes;
-static std::unordered_map<uint64_t, std::string> g_proto_hash_to_name;
+static std::unordered_map<std::string, EntityPrototype> g_entity_prototypes; // name -> prototype
+static std::unordered_map<uint64_t, std::string> g_proto_hash_to_name;       // name-hash -> name
+static std::unordered_map<EntityId, std::string> g_proto_id_to_name;         // prototype-id -> name
 
 // Efficient chunk-to-entity mapping for spatial queries
 static std::unordered_map<int64_t, std::vector<EntityId>> g_chunk_entities;
@@ -128,15 +129,12 @@ EntityId CreateEntity(const std::string& prototype_name, float grid_x, float gri
         return -1;
     }
     
-    // Get the prototype entity to check its transform component
-    Entity* prototype = GetEntity(it->second.prototype_id);
-    if (!prototype) {
-        printf("ERROR: Prototype entity %d not found\n", it->second.prototype_id);
-        return -1;
-    }
+    // Diagnostics: ensure prototype components exist (catalog only)
+    printf("CREATE name=%s proto_id=%d at=(%.1f,%.1f,%d)\n", prototype_name.c_str(), it->second.prototype_id, grid_x, grid_y, floor_z);
     
     // Check entity footprint for collision
     components::TransformComponent* transform = components::g_transform_components.GetComponent(it->second.prototype_id);
+    printf("CREATE proto_has_transform=%d\n", (int)(transform!=nullptr));
     int32_t width = 1;
     int32_t height = 1;
     
@@ -161,30 +159,41 @@ EntityId CreateEntity(const std::string& prototype_name, float grid_x, float gri
     }
     
     // Clone the prototype entity
-    return CloneEntity(it->second.prototype_id, grid_x, grid_y, floor_z);
+    EntityId id = CloneEntity(it->second.prototype_id, it->first, grid_x, grid_y, floor_z);
+    printf("CREATE DONE id=%d total_entities=%zu\n", (int)id, g_entities.size());
+    return id;
 }
 
-EntityId CloneEntity(EntityId prototype_id, float grid_x, float grid_y, int32_t floor_z) {
+EntityId CloneEntity(EntityId prototype_id, const std::string& prototype_name, float grid_x, float grid_y, int32_t floor_z) {
     // Create new entity
     EntityId entity_id = g_next_entity_id++;
-    Entity* prototype = GetEntity(prototype_id);
-    if (!prototype) {
-        printf("ERROR: Prototype entity %d not found\n", prototype_id);
-        return -1;
-    }
-    
-    Entity entity(entity_id, prototype->name, prototype->prototype_name);
+    // Create runtime entity; both display and prototype name set to prototype_name
+    Entity entity(entity_id, prototype_name, prototype_name);
     g_entities.push_back(entity);
-    
-    // Clone all components from prototype
+
+    // Clone all components from prototype (component stores keyed by prototype_id)
+    {
+        auto pt = components::g_transform_components.GetComponent(prototype_id) != nullptr;
+        auto pa = components::g_animstate_components.GetComponent(prototype_id) != nullptr;
+        auto pm = components::g_metadata_components.GetComponent(prototype_id) != nullptr;
+        auto pi = components::g_inventory_components.GetComponent(prototype_id) != nullptr;
+        printf("CLONE proto_id=%d has T=%d A=%d M=%d I=%d -> entity_id=%d\n", prototype_id, (int)pt, (int)pa, (int)pm, (int)pi, entity_id);
+    }
     CloneComponentsFromEntity(prototype_id, entity_id, grid_x, grid_y, floor_z);
-    
+    {
+        auto t = components::g_transform_components.GetComponent(entity_id);
+        auto a = components::g_animstate_components.GetComponent(entity_id) != nullptr;
+        auto m = components::g_metadata_components.GetComponent(entity_id) != nullptr;
+        auto i = components::g_inventory_components.GetComponent(entity_id) != nullptr;
+        printf("CLONE RESULT entity_id=%d T=%d A=%d M=%d I=%d pos=(%.1f,%.1f,%d)\n", entity_id, (int)(t!=nullptr), (int)a, (int)m, (int)i, t? t->grid_x:0.0f, t? t->grid_y:0.0f, t? t->floor_z:0);
+    }
+
     // Add entity to chunk mapping for efficient spatial queries
     AddEntityToChunkMapping(entity_id);
-    
-    printf("Cloned entity %d from prototype %d at grid (%.1f, %.1f) on floor %d\n", 
+
+    printf("Cloned entity %d from prototype %d at grid (%.1f, %.1f) on floor %d\n",
            entity_id, prototype_id, grid_x, grid_y, floor_z);
-    
+
     return entity_id;
 }
 
@@ -308,6 +317,7 @@ void SetEntityFloor(EntityId id, int32_t floor_z) {
 
 void RegisterEntityPrototype(const std::string& name, EntityId prototype_id) {
     g_entity_prototypes[name] = EntityPrototype(prototype_id, name);
+    g_proto_id_to_name[prototype_id] = name;
     printf("Registered entity prototype: %s (ID: %d)\n", name.c_str(), prototype_id);
 }
 
@@ -319,6 +329,7 @@ EntityPrototype* GetEntityPrototype(const std::string& name) {
 void ClearEntityPrototypes() {
     g_entity_prototypes.clear();
     g_proto_hash_to_name.clear();
+    g_proto_id_to_name.clear();
 }
 
 void RegisterDefaultEntityPrototypes() {

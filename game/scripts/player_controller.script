@@ -13,72 +13,7 @@ local function grid_to_world(grid_x, grid_y)
 	return grid_x * 64.0, grid_y * 64.0  -- No flipping needed
 end
 
--- Define test_chunk_state as a local function
-local function test_chunk_state(player_id, building_id)
-	print("=== CHUNK STATE TEST ===")
-	
-	-- Get player position
-	local player = sim.get_entity(player_id)
-	local building = sim.get_entity(building_id)
-	
-	if player and building then
-		-- Debug: print all fields in the player entity
-		print("Player entity fields:")
-		for key, value in pairs(player) do
-			print("  " .. key .. " = " .. tostring(value))
-		end
-		
-		print("Building entity fields:")
-		for key, value in pairs(building) do
-			print("  " .. key .. " = " .. tostring(value))
-		end
-		
-		-- Only print chunk info if the fields exist
-		if player.chunk_x and player.chunk_y then
-			print(string.format("Player at grid (%.1f, %.1f) chunk (%d, %d) floor %d", 
-						   player.grid_x, player.grid_y, player.chunk_x, player.chunk_y, player.floor_z))
-		else
-			print(string.format("Player at grid (%.1f, %.1f) chunk (unknown)", 
-						   player.grid_x, player.grid_y))
-		end
-		
-		if building.chunk_x and building.chunk_y then
-			print(string.format("Building at grid (%.1f, %.1f) chunk (%d, %d) floor %d", 
-						   building.grid_x, building.grid_y, building.chunk_x, building.chunk_y, building.floor_z))
-		else
-			print(string.format("Building at grid (%.1f, %.1f) chunk (unknown)", 
-						   building.grid_x, building.grid_y))
-		end
-		
-		-- Check entities in building's chunk (if we have chunk coordinates)
-		if building.chunk_x and building.chunk_y then
-			local building_chunk_entities = sim.get_entities_in_chunk(building.floor_z, building.chunk_x, building.chunk_y)
-			print(string.format("Entities in building chunk (%d, %d) floor %d: %d", 
-						   building.chunk_x, building.chunk_y, building.floor_z, #building_chunk_entities))
-		end
-		
-		-- Check entities in player's chunk (if we have chunk coordinates)
-		if player.chunk_x and player.chunk_y then
-			local player_chunk_entities = sim.get_entities_in_chunk(player.floor_z, player.chunk_x, player.chunk_y)
-			print(string.format("Entities in player chunk (%d, %d) floor %d: %d", 
-						   player.chunk_x, player.chunk_y, player.floor_z, #player_chunk_entities))
-		end
-		
-		-- Check entities near building
-		local nearby_entities = sim.get_entities_in_radius(building.grid_x, building.grid_y, 100)  -- CHANGED: grid coordinates
-		print(string.format("Entities within 100 grid units of building: %d", #nearby_entities))
-		
-		-- Check if building is still there
-		local building_still_exists = sim.get_entity(building_id)
-		if building_still_exists then
-			print("Building still exists in simulation")
-		else
-			print("ERROR: Building disappeared!")
-		end
-	end
-	
-	print("=======================")
-end
+
 
 -- Add this function to display player stats
 function show_player_stats(self)
@@ -130,46 +65,7 @@ function show_player_stats(self)
 	end
 	
 	print(string.format("Inventory: %d/%d slots used (%d input, %d output), %d total items", 
-					   used_slots, total_slots, input_slots, output_slots, total_items))
-	
-	-- Show crafting building inventory too
-	local building = sim.get_entity(self.crafting_id)
-	if building then
-		print("=== CRAFTING BUILDING INVENTORY ===")
-		
-		local building_total_slots = sim.inventory_get_slot_count(self.crafting_id)
-		print(string.format("Building total slots: %d", building_total_slots))
-		
-		local building_used_slots = 0
-		local building_total_items = 0
-		local building_input_slots = 0
-		local building_output_slots = 0
-		
-		-- Check all building slots
-		for slot_index = 0, building_total_slots - 1 do
-			local item_type = sim.inventory_get_slot_item(self.crafting_id, slot_index)
-			local quantity = sim.inventory_get_slot_quantity(self.crafting_id, slot_index)
-			local is_output = sim.inventory_is_slot_output(self.crafting_id, slot_index)
-			
-			if is_output then
-				building_output_slots = building_output_slots + 1
-			else
-				building_input_slots = building_input_slots + 1
-			end
-			
-			if item_type ~= 0 then
-				building_used_slots = building_used_slots + 1
-				building_total_items = building_total_items + quantity
-				
-				local item_name = get_item_name(item_type)
-				local slot_type = is_output and "Output" or "Input"
-				print(string.format("  Building %s slot %d: %s x%d", slot_type, slot_index, item_name, quantity))
-			end
-		end
-		
-		print(string.format("Building inventory: %d/%d slots used (%d input, %d output), %d total items", 
-					   building_used_slots, building_total_slots, building_input_slots, building_output_slots, building_total_items))
-	end
+				   used_slots, total_slots, input_slots, output_slots, total_items))
 	
 	print("===================")
 end
@@ -205,7 +101,7 @@ function test_inventory(self)
 end
 
 function init(self)
-	msg.post(".", "acquire_input_focus")
+	--msg.post(".", "acquire_input_focus")
 	
 	-- Initialize movement variables
 	self.move_dx = 0
@@ -218,15 +114,12 @@ function init(self)
 	timer.delay(0.1, false, function()
 		-- Try to get entity IDs directly from the simulation by prototype name
 		local players = sim.get_entities_by_prototype("player")
-		local crafting_buildings = sim.get_entities_by_prototype("crafting_building")
 		
-		if #players > 0 and #crafting_buildings > 0 then
+		if #players > 0 then
 			self.player_id = players[1]
-			self.crafting_id = crafting_buildings[1]
 			
 			print("Found entities:")
 			print("  Player: " .. self.player_id)
-			print("  Crafting: " .. self.crafting_id)
 			
 			-- Add starter items to player inventory (ONCE)
 			cmd.add_item_to_inventory(self.player_id, 0, 1, 5)  -- 5 stone to slot 0
@@ -238,7 +131,7 @@ function init(self)
 			
 			print("=== PLAYER CONTROLLER READY ===")
 		else
-			print("ERROR: Could not find entities!")
+			print("ERROR: Could not find player!")
 		end
 	end)
 	
@@ -331,23 +224,7 @@ function on_input(self, action_id, action)
 		if player then
 			local world_x, world_y = grid_to_world(player.grid_x, player.grid_y)  -- CHANGED: Convert grid to world
 			print(string.format("Player at world: (%.1f, %.1f) grid: (%.1f, %.1f) floor: %d", 
-						   world_x, world_y, player.grid_x, player.grid_y, player.floor_z))
-		end
-	elseif action_id == hash("key_t") and action.pressed then
-		-- Test chunk state
-		test_chunk_state(self.player_id, self.crafting_id)
-	elseif action_id == hash("key_r") and action.pressed then
-		-- Teleport player back to building (grid coordinates AND floor)
-		local building = sim.get_entity(self.crafting_id)
-		if building then
-			cmd.set_entity_position(self.player_id, building.grid_x, building.grid_y)
-			cmd.set_entity_floor(self.player_id, building.floor_z)
-			self.current_floor = building.floor_z
-			-- Note: set_current_floor might need to be a command too
-			print(string.format("Teleported player to building at grid (%.1f, %.1f) on floor %d", 
-						   building.grid_x, building.grid_y, building.floor_z))
-		else
-			print("ERROR: Building not found!")
+					   world_x, world_y, player.grid_x, player.grid_y, player.floor_z))
 		end
 	elseif action_id == hash("key_tab") and action.pressed then
 		show_player_stats(self)

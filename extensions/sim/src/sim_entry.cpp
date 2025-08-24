@@ -30,6 +30,7 @@ static double         g_hz                   = 60.0;
 static float          s_fixed_dt             = 1.0f / 60.0f;
 static uint32_t       s_current_tick         = 0;
 static float          s_last_alpha           = 0.0f;
+static int            s_debug_ticks_printed  = 0;
 
 static bool           s_paused               = false;
 
@@ -92,6 +93,16 @@ static void CreateAndFillSnapshot(dmBuffer::HBuffer& out_buf) {
     dmBuffer::GetStream(buf, dmHashString64("vy"),    (void**)&vyp,    &count, &comps, &stride);
     dmBuffer::GetStream(buf, dmHashString64("ang"),   (void**)&angp,   &count, &comps, &stride);
     dmBuffer::GetStream(buf, dmHashString64("flags"), (void**)&flagsp, &count, &comps, &stride);
+
+    // Zero-initialize all streams to avoid uninitialized subnormal values
+    memset(idp,    0, sizeof(uint32_t) * rows);
+    memset(flagsp, 0, sizeof(uint32_t) * rows);
+    memset(xp,     0, sizeof(float)    * rows);
+    memset(yp,     0, sizeof(float)    * rows);
+    memset(zp,     0, sizeof(float)    * rows);
+    memset(vxp,    0, sizeof(float)    * rows);
+    memset(vyp,    0, sizeof(float)    * rows);
+    memset(angp,   0, sizeof(float)    * rows);
 
     // Fill rows
     for (uint32_t i = 0; i < rows; ++i) {
@@ -157,6 +168,23 @@ static void StepOneTick(float dt_fixed) {
     s_prev_snapshot = s_curr_snapshot; // last frame becomes 'prev'
     s_curr_snapshot = 0;
     CreateAndFillSnapshot(s_curr_snapshot);
+
+    // Boot diagnostics: print first ticks' snapshot summary
+    if (s_debug_ticks_printed < 8) {
+        uint32_t *idp = 0; float *xp = 0, *yp = 0, *zp = 0; uint32_t n = 0, comps = 0, stride = 0;
+        if (s_curr_snapshot) {
+            dmBuffer::GetStream(s_curr_snapshot, dmHashString64("id"), (void**)&idp, &n, &comps, &stride);
+            dmBuffer::GetStream(s_curr_snapshot, dmHashString64("x"),  (void**)&xp,  &n, &comps, &stride);
+            dmBuffer::GetStream(s_curr_snapshot, dmHashString64("y"),  (void**)&yp,  &n, &comps, &stride);
+            dmBuffer::GetStream(s_curr_snapshot, dmHashString64("z"),  (void**)&zp,  &n, &comps, &stride);
+        }
+        if (idp && n > 0) {
+            dmLogInfo("SNAPSHOT tick=%u rows=%u first_id=%u pos=(%f,%f,%f)", s_current_tick, n, idp[0], xp[0], yp[0], zp[0]);
+        } else {
+            dmLogInfo("SNAPSHOT tick=%u rows=0", s_current_tick);
+        }
+        ++s_debug_ticks_printed;
+    }
 
     // 4) clear edge-triggered event queues
     Events_Clear();

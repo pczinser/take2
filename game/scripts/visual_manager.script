@@ -30,6 +30,33 @@ function on_message(self, message_id, message, sender)
             }
         }
 
+        -- Boot diagnostics: print stream lengths and first few values once
+        self._vm_debug_once = self._vm_debug_once or false
+        if not self._vm_debug_once then
+            local function safe_index(arr, idx)
+                if not arr then return 0 end
+                local n = #arr
+                if n < 1 then return 0 end
+                if idx > n then idx = n end
+                return arr[idx] or 0
+            end
+            local id1 = safe_index(streams.curr.id, 1)
+            local id2 = safe_index(streams.curr.id, 2)
+            local id3 = safe_index(streams.curr.id, 3)
+            local x1 = safe_index(streams.curr.x, 1)
+            local x2 = safe_index(streams.curr.x, 2)
+            local x3 = safe_index(streams.curr.x, 3)
+            local y1 = safe_index(streams.curr.y, 1)
+            local y2 = safe_index(streams.curr.y, 2)
+            local y3 = safe_index(streams.curr.y, 3)
+            local z1 = safe_index(streams.curr.z, 1)
+            local z2 = safe_index(streams.curr.z, 2)
+            local z3 = safe_index(streams.curr.z, 3)
+            print("VM DEBUG: lens id/x/y/z =", streams.curr.id and #streams.curr.id or 0, streams.curr.x and #streams.curr.x or 0, streams.curr.y and #streams.curr.y or 0, streams.curr.z and #streams.curr.z or 0)
+            print("VM DEBUG: head id=", id1, id2, id3, " x=", x1, x2, x3, " y=", y1, y2, y3, " z=", z1, z2, z3)
+            self._vm_debug_once = true
+        end
+
         if prev then
             streams.prev = {
                 id = buffer.get_stream(prev, hash("id")),

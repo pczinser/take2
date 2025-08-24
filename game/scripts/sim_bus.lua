@@ -9,7 +9,8 @@ local M = {
         curr = nil,
         alpha = 0,
         tick = 0
-    }
+    },
+    debug_ticks_printed = 0
 }
 
 function M.on_init(sim)
@@ -49,6 +50,15 @@ function M.on_tick()
 	M.current_snapshots.curr = curr
 	M.current_snapshots.alpha = alpha
 	M.current_snapshots.tick = tick
+	if M.debug_ticks_printed < 8 then
+		local rows = 0
+		if curr then
+			local id_stream = buffer.get_stream(curr, hash("id"))
+			rows = id_stream and #id_stream or 0
+		end
+		print("BUS DEBUG: tick=", tick, " rows=", rows)
+		M.debug_ticks_printed = M.debug_ticks_printed + 1
+	end
 	
 	-- Send notification messages to all subscribers (no data, just notification)
 	for i = 1, #M.subscribers do

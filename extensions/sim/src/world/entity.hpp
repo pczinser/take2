@@ -34,7 +34,7 @@ struct Entity {
 
 // === ENTITY MANAGEMENT ===
 EntityId CreateEntity(const std::string& prototype_name, float grid_x, float grid_y, int32_t floor_z);
-EntityId CloneEntity(EntityId prototype_id, float grid_x, float grid_y, int32_t floor_z);
+EntityId CloneEntity(EntityId prototype_id, const std::string& prototype_name, float grid_x, float grid_y, int32_t floor_z);
 Entity* GetEntity(EntityId id);
 void DestroyEntity(EntityId id);  // Removes entity and all its components
 const std::vector<Entity>& GetAllEntities();

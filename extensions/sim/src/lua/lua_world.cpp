@@ -484,16 +484,24 @@ static int L_register_entity_prototypes(lua_State* L) {
         
         const char* prototype_name = lua_tostring(L, -2);
         
-        // Create prototype entity manually (since it's not a real simulation entity)
-        EntityId prototype_id = GetNextEntityId();
-        Entity prototype_entity(prototype_id, prototype_name, prototype_name);
-        AddEntityToList(prototype_entity);
-        
-        // Parse Lua template and create components for prototype
+        // Allocate a deterministic prototype id from name-hash (separate from runtime entity ids)
+        uint64_t h64 = dmHashString64(prototype_name);
+        EntityId prototype_id = (EntityId)(h64 & 0x7fffffff); // keep in positive 31-bit range
+
+        // Parse Lua template and create components for prototype (stored under prototype_id)
         CreateComponentInstancesFromLua(prototype_id, prototype_name, L, -1, 0, 0, 0);
-        
-        // Register the prototype
+
+        // Register the prototype in the catalog
         RegisterEntityPrototype(prototype_name, prototype_id);
+
+        // Diagnostics: verify prototype component presence
+        {
+            auto t = components::g_transform_components.GetComponent(prototype_id) != nullptr;
+            auto a = components::g_animstate_components.GetComponent(prototype_id) != nullptr;
+            auto m = components::g_metadata_components.GetComponent(prototype_id) != nullptr;
+            auto i = components::g_inventory_components.GetComponent(prototype_id) != nullptr;
+            printf("PROTO OK name=%s id=%d T=%d A=%d M=%d I=%d\n", prototype_name, prototype_id, (int)t, (int)a, (int)m, (int)i);
+        }
         // Map hash->name for command-based spawns
         RegisterPrototypeHash(dmHashString64(prototype_name), prototype_name);
         
@@ -756,7 +764,6 @@ static const luaL_Reg sim_functions[] = {
     {"get_active_chunks", L_get_active_chunks},
     
     // Entity functions
-    // {"create_entity", L_create_entity},   // disabled: use command queue cmd_spawn_entity
     {"get_entity", L_get_entity},
     {"destroy_entity", L_destroy_entity},
     {"move_entity", L_move_entity},

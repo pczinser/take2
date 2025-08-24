@@ -4,6 +4,11 @@ local entity_loader = require("game.scripts.module.entity.entity_loader")
 local cmd = require("game.scripts.command_queue")
 local bus = require("game.scripts.sim_bus")
 local sim = require("game.scripts.sim")
+-- Ensure behavior modules are bundled. Defold's packer only includes literal requires.
+-- This avoids dynamic require being stripped in entity adapters.
+local __behavior_player = require("game.scripts.module.entity.behavior.player")
+-- NOTE: Ensure entity behavior modules are bundled. Defold strips modules not statically required.
+-- This import registers available behaviors for dynamic loading by entity.script at runtime.
 
 local SIM_TICK = hash("sim_tick")
 local SIM_SPAWN = hash("sim_spawn")
@@ -15,7 +20,8 @@ function init(self)
     print("Sim Kernel Starter: initializing")
 
     sim.set_rate(60)
-    sim.pause(false)
+    -- Deterministic bootstrap: pause, queue commands, step once, then start
+    sim.pause(true)
 
     -- Spawn three floors at explicit Z (supports negatives for basements)
     cmd.spawn_floor_at_z(-1, 2, 2, 32, 32) -- basement
@@ -28,18 +34,22 @@ function init(self)
     -- List available prototypes (for debugging)
     entity_loader.list_prototypes()
 
-    -- Ensure bus is initialized and register as listener
+    -- TEST ONLY: spawn player while paused so first live tick already contains it
+    print("TEST: queuing player spawn at (0,0,0) during bootstrap...")
+    cmd.spawn_entity("player", 0, 0, 0)
+    cmd.set_observer_position(0, 0, 0, 0)
+    sim.step_n(1)
+    print("TEST: bootstrap step complete; player should exist in snapshot")
+
+    -- Ensure bus is initialized and register as listener AFTER bootstrap
     bus.on_init(sim)
     sim.register_listener(msg.url())
     print("Main script: registered as sim listener")
 
     self.next_print = 0
 
-    -- TEST ONLY: Spawn a player entity at grid (0,0) on floor 0
-    -- This block can be removed once normal gameplay spawning is in place.
-    print("TEST: creating player entity at (0,0,0)...")
-    cmd.spawn_entity("player", 0, 0, 0)
-    print("TEST: spawn command enqueued for player")
+    -- Unpause to start normal ticking
+    sim.pause(false)
 end
 
 function update(self, dt)

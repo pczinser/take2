@@ -37,6 +37,13 @@ function on_message(self, message_id, message, sender)
                 return
             end
         end
+        -- Boot debug: print hot chunk count first 8 ticks
+        self._debug_ticks = (self._debug_ticks or 0)
+        if self._debug_ticks < 8 then
+            local vc = world.get_visual_chunks(0)
+            print("WORLD DEBUG: hot chunks=", #vc)
+            self._debug_ticks = self._debug_ticks + 1
+        end
         load_active_chunks()
     elseif message_id == hash("bus_spawn") then
         -- Optional: handle immediate spawn events

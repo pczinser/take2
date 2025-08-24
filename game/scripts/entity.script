@@ -1,4 +1,7 @@
 local sim = require("game.scripts.sim")
+-- Ensure behavior modules are bundled for this collection (loaded via collection proxy)
+-- Defold packages requires per-collection; load behavior index here so the game collection includes them
+local _ = require("game.scripts.module.entity.behavior.index")
 
 -- Properties can be passed from factory.create
 go.property("entity_id", 0)
@@ -6,15 +9,23 @@ go.property("entity_id", 0)
 local function safe_require(path)
 	local ok, mod = pcall(require, path)
 	if ok then return mod end
+	print("ENTITY ADAPTER: failed to require:", path, " error:", tostring(mod))
 	return nil
 end
 
 local function load_behavior_for_prototype(self, prototype_name)
 	if not prototype_name or prototype_name == "" then return end
 	local path = string.format("game.scripts.module.entity.behavior.%s", prototype_name)
+	print("ENTITY ADAPTER:", go.get_id(), "loading behavior:", path, " for entity_id=", tostring(self.entity_id))
 	self.behavior = safe_require(path)
 	if self.behavior and self.behavior.init then
 		self.behavior.init(self)
+	end
+	-- Ensure input focus if behavior handles input
+	if self.behavior and self.behavior.on_input and not self._has_input_focus then
+		print("ENTITY ADAPTER:", go.get_id(), "acquiring input focus for behavior on_input")
+		msg.post(".", "acquire_input_focus")
+		self._has_input_focus = true
 	end
 end
 
@@ -25,6 +36,7 @@ local function bind_from_entity_id(self, id, prototype_name)
 		prototype_name = ent and ent.prototype_name or nil
 	end
 	self.prototype = prototype_name
+	print("ENTITY ADAPTER:", go.get_id(), "bind entity id=", tostring(id), " proto=", tostring(prototype_name))
 	load_behavior_for_prototype(self, prototype_name)
 end
 
@@ -32,6 +44,8 @@ function init(self)
 	self.entity_id = (self.entity_id ~= 0) and self.entity_id or nil
 	self.prototype = nil
 	self.behavior = nil
+	self._has_input_focus = false
+	print("ENTITY ADAPTER:", go.get_id(), "init entity_id property=", tostring(self.entity_id))
 	if self.entity_id then
 		bind_from_entity_id(self, self.entity_id, nil)
 	end
@@ -61,147 +75,13 @@ function on_input(self, action_id, action)
 end
 
 function final(self)
+	if self._has_input_focus then
+		print("ENTITY ADAPTER:", go.get_id(), "releasing input focus")
+		msg.post(".", "release_input_focus")
+		self._has_input_focus = false
+	end
 	if self.behavior and self.behavior.final then
 		self.behavior.final(self)
 	end
 end
 
--- game/scripts/entity.script
-local entity = {
-    entity_id = nil,
-    current_animation = nil,
-    last_state_hash = nil,
-    frame_count = 0
-}
-
-function init(self)
-    self.entity_id = nil
-end
-
-function on_message(self, message_id, message, sender)
-    if message_id == hash("set_entity_id") then
-        self.entity_id = message.entity_id
-        self:setup_visual()
-    end
-end
-
-function setup_visual(self)
-    if not self.entity_id then return end
-    
-    -- Get visual component data from simulation
-    local visual_data = sim.get_entity_visual_component(self.entity_id)
-    if visual_data then
-        -- Set the atlas
-        if visual_data.atlas_path then
-            go.set("#sprite", "image", visual_data.atlas_path)
-        end
-        
-        -- Set initial animation
-        self:evaluate_animation()
-    end
-    
-    -- Set initial position
-    self:update_position()
-end
-
-function update(self, dt)
-    -- Update position every frame
-    self:update_position()
-    
-    -- Check animation every 5 frames for performance
-    if self.frame_count % 5 == 0 then
-        self:evaluate_animation()
-    end
-    self.frame_count = self.frame_count + 1
-end
-
-function update_position(self)
-    if not self.entity_id then return end
-    
-    local entity_data = sim.get_entity(self.entity_id)
-    if not entity_data then return end
-    
-    -- Convert grid coordinates to world coordinates
-    local world_x = entity_data.grid_x * 64.0
-    local world_y = entity_data.grid_y * 64.0
-    
-    -- Only update if position changed
-    if world_x ~= self.last_x or world_y ~= self.last_y then
-        go.set_position(vmath.vector3(world_x, world_y, 0), self.id)
-        self.last_x = world_x
-        self.last_y = world_y
-    end
-end
-
-function evaluate_animation(self)
-    if not self.entity_id then return end
-    
-    -- Get current state from simulation
-    local state_data = sim.get_entity_state_component(self.entity_id)
-    if not state_data then return end
-    
-    -- Build current conditions
-    local current_conditions = {
-        facing = state_data.facing_direction,
-        moving = state_data.is_moving and "true" or "false"
-    }
-    
-    -- Create a hash of current state to check if it changed
-    local state_hash = self:hash_state(current_conditions)
-    if state_hash == self.last_state_hash then
-        return -- State hasn't changed, no need to update animation
-    end
-    
-    -- Find the best matching animation
-    local visual_data = sim.get_entity_visual_component(self.entity_id)
-    if not visual_data or not visual_data.animations then return end
-    
-    local best_animation = self:find_matching_animation(visual_data.animations, current_conditions)
-    
-    if best_animation and best_animation ~= self.current_animation then
-        -- Change the animation using Defold's sprite system
-        sprite.play_flipbook("#sprite", best_animation)
-        self.current_animation = best_animation
-        print("Player animation changed to: " .. best_animation)
-    end
-    
-    self.last_state_hash = state_hash
-end
-
-function find_matching_animation(self, animations, conditions)
-    local best_match = nil
-    local best_score = 0
-    
-    for animation_name, animation_data in pairs(animations) do
-        local score = self:calculate_match_score(animation_data.conditions, conditions)
-        if score > best_score then
-            best_score = score
-            best_match = animation_name
-        end
-    end
-    
-    return best_match
-end
-
-function calculate_match_score(self, animation_conditions, current_conditions)
-    local score = 0
-    local total_conditions = 0
-    
-    for condition_key, condition_value in pairs(animation_conditions) do
-        total_conditions = total_conditions + 1
-        if current_conditions[condition_key] == condition_value then
-            score = score + 1
-        end
-    end
-    
-    return total_conditions > 0 and score / total_conditions or 0
-end
-
-function hash_state(self, conditions)
-    -- Simple hash function for state comparison
-    local hash = ""
-    for key, value in pairs(conditions) do
-        hash = hash .. key .. ":" .. value .. "|"
-    end
-    return hash
-end

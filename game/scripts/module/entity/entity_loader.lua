@@ -11,7 +11,7 @@ local entity_prototypes = {
                 category = "player"
             },
             transform = {
-                move_speed = 100.0,
+                move_speed = 3.0,
                 width = 1,
                 height = 1
             },
