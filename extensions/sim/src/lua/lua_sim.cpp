@@ -36,10 +36,16 @@ static int L_read_snapshots(lua_State* L) {
     dmBuffer::HBuffer curr = GetSnapshotBufferCurrent();
 
     if (!prev) lua_pushnil(L);
-    else { dmScript::LuaHBuffer lb(prev, dmScript::OWNER_C); dmScript::PushBuffer(L, lb); }
+    else { 
+        dmScript::LuaHBuffer lb(prev, dmScript::OWNER_LUA); 
+        dmScript::PushBuffer(L, lb); 
+    }
 
     if (!curr) lua_pushnil(L);
-    else { dmScript::LuaHBuffer lb(curr, dmScript::OWNER_C); dmScript::PushBuffer(L, lb); }
+    else { 
+        dmScript::LuaHBuffer lb(curr, dmScript::OWNER_LUA); 
+        dmScript::PushBuffer(L, lb); 
+    }
 
     lua_pushnumber(L, GetLastAlpha());
     lua_pushinteger(L, GetCurrentTick());
@@ -206,18 +212,6 @@ static int L_cmd_set_observer_position(lua_State* L) {
     return 0;
 }
 
-static int L_cmd_set_entity_state_flag(lua_State* L) {
-    DM_LUA_STACK_CHECK(L, 0);
-    
-    uint32_t entity_id = (uint32_t)luaL_checkinteger(L, 1);
-    dmhash_t flag = dmScript::CheckHash(L, 2);
-    dmhash_t value = dmScript::CheckHash(L, 3);
-    
-    Command cmd(CMD_SET_ENTITY_STATE_FLAG, entity_id, (uint64_t)flag, (uint64_t)value, 0.0f, 0.0f, 0.0f);
-    EnqueueCommand(cmd);
-    return 0;
-}
-
 static int L_cmd_spawn_floor_at_z(lua_State* L) {
     DM_LUA_STACK_CHECK(L, 0);
     
@@ -237,6 +231,27 @@ static int L_cmd_observer_follow_entity(lua_State* L) {
     uint32_t entity_id = (uint32_t)luaL_checkinteger(L, 1);
     uint32_t observer_id = (uint32_t)luaL_optinteger(L, 2, 0);
     Command cmd(CMD_OBSERVER_FOLLOW_ENTITY, entity_id, observer_id, 0, 0.0f, 0.0f, 0.0f);
+    EnqueueCommand(cmd);
+    return 0;
+}
+
+static int L_cmd_set_animation_state(lua_State* L) {
+    DM_LUA_STACK_CHECK(L, 0);
+    uint32_t entity_id = (uint32_t)luaL_checkinteger(L, 1);
+    const char* condition_key = luaL_checkstring(L, 2);
+    const char* condition_value = luaL_checkstring(L, 3);
+    
+    Command cmd(CMD_SET_ANIMATION_STATE, entity_id, dmHashString64(condition_key), dmHashString64(condition_value), 0.0f, 0.0f, 0.0f);
+    EnqueueCommand(cmd);
+    return 0;
+}
+
+static int L_cmd_set_entity_facing(lua_State* L) {
+    DM_LUA_STACK_CHECK(L, 0);
+    uint32_t entity_id = (uint32_t)luaL_checkinteger(L, 1);
+    const char* facing = luaL_checkstring(L, 2);
+    
+    Command cmd(CMD_SET_ENTITY_FACING, entity_id, dmHashString64(facing), 0, 0.0f, 0.0f, 0.0f);
     EnqueueCommand(cmd);
     return 0;
 }
@@ -270,9 +285,10 @@ void LuaRegister_Sim(lua_State* L) {
         {"cmd_add_item_to_inventory", L_cmd_add_item_to_inventory},
         {"cmd_remove_item_from_inventory", L_cmd_remove_item_from_inventory},
         {"cmd_set_observer_position", L_cmd_set_observer_position},
-        {"cmd_set_entity_state_flag", L_cmd_set_entity_state_flag},
         {"cmd_spawn_floor_at_z", L_cmd_spawn_floor_at_z},
         {"cmd_observer_follow_entity", L_cmd_observer_follow_entity},
+        {"cmd_set_animation_state", L_cmd_set_animation_state},
+        {"cmd_set_entity_facing", L_cmd_set_entity_facing},
         {0, 0}
     };
 

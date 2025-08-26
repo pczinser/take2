@@ -28,10 +28,11 @@ struct TransformComponent {
     int32_t chunk_x, chunk_y;  // Chunk coordinates (derived from grid_x/y)
     float move_speed;          // Movement speed
     int32_t width, height;     // Size in grid cells (for buildings/entities that occupy multiple tiles)
+    std::string facing;        // Current facing direction ("north", "south", "east", "west")
     
-    TransformComponent() : grid_x(0), grid_y(0), floor_z(0), chunk_x(0), chunk_y(0), move_speed(100.0f), width(1), height(1) {}
+    TransformComponent() : grid_x(0), grid_y(0), floor_z(0), chunk_x(0), chunk_y(0), move_speed(100.0f), width(1), height(1), facing("south") {}
     TransformComponent(float x, float y, int32_t z, float speed = 100.0f, int32_t w = 1, int32_t h = 1) 
-        : grid_x(x), grid_y(y), floor_z(z), move_speed(speed), width(w), height(h) {
+        : grid_x(x), grid_y(y), floor_z(z), move_speed(speed), width(w), height(h), facing("south") {
         // Calculate chunk coordinates (assuming 32x32 chunks)
         chunk_x = (int32_t)(x / 32.0f);
         chunk_y = (int32_t)(y / 32.0f);
@@ -79,9 +80,46 @@ struct InventoryComponent {
 
 // Animation/state flags used for visuals
 struct AnimStateComponent {
-    uint32_t flags;        // bitfield aligned with visual_manager
-    float facing_angle;    // optional radians
-    AnimStateComponent() : flags(0), facing_angle(0.0f) {}
+    std::unordered_map<std::string, std::string> conditions;  // key -> value pairs
+    
+    AnimStateComponent() = default;
+    
+    void SetCondition(const std::string& key, const std::string& value) {
+        conditions[key] = value;
+    }
+    
+    std::string GetCondition(const std::string& key, const std::string& default_value = "") const {
+        auto it = conditions.find(key);
+        return (it != conditions.end()) ? it->second : default_value;
+    }
+    
+    bool HasCondition(const std::string& key) const {
+        return conditions.find(key) != conditions.end();
+    }
+    
+    void ClearCondition(const std::string& key) {
+        conditions.erase(key);
+    }
+};
+
+// Visual component for rendering configuration
+struct VisualComponent {
+    std::string atlas_path;
+    int32_t layer;
+    
+    struct AnimationCondition {
+        std::string name;
+        std::unordered_map<std::string, std::string> conditions;  // key -> value pairs
+        
+        AnimationCondition() = default;
+        AnimationCondition(const std::string& anim_name) : name(anim_name) {}
+    };
+    
+    std::vector<AnimationCondition> animations;
+    
+    VisualComponent() : atlas_path(""), layer(1) {}
+    VisualComponent(const std::string& atlas, int32_t render_layer) 
+        : atlas_path(atlas), layer(render_layer) {}
 };
 
 } // namespace components

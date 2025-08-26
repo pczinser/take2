@@ -4,6 +4,7 @@ local M = {}
 local cmd = require("game.scripts.command_queue")
 local sim = require("game.scripts.sim")
 local bus = require("game.scripts.sim_bus")
+M.wants_input = true
 
 -- Convert world coordinates to grid coordinates (Defold system)
 local function world_to_grid(world_x, world_y)
@@ -70,27 +71,44 @@ end
 function M.on_message(self, message_id, message, sender)
 	if message_id == hash("bus_tick") then
 		if not self.entity_id then return end
-		-- Get speed from entity.transform (exposed via sim.get_entity)
-		local ent = sim.get_entity(self.entity_id)
-		local speed = (ent and ent.move_speed) or 6.0
+		
+		-- Get current transform state
+		local transform = sim.get_entity_transform(self.entity_id)
+		if not transform then return end
+		
+		-- Calculate movement state from input
 		local moving = (self.move_dx ~= 0 or self.move_dy ~= 0)
+		
+		-- Calculate facing from input or current transform
+		local facing = "south"  -- default
+		if self.move_dx > 0 then 
+			facing = "east"
+		elseif self.move_dx < 0 then 
+			facing = "west" 
+		elseif self.move_dy > 0 then 
+			facing = "north"
+		elseif self.move_dy < 0 then 
+			facing = "south"
+		else 
+			facing = transform.facing or "south"  -- keep current facing when not moving
+		end
+		
+		-- Update animation state using new system
+		cmd.set_animation_state(self.entity_id, "moving", moving and "true" or "false")
+		cmd.set_animation_state(self.entity_id, "facing", facing)
+		
+		-- Update transform facing if it changed
+		if facing ~= transform.facing then
+			cmd.set_entity_facing(self.entity_id, facing)
+		end
+		
+		-- Handle movement
 		if moving then
+			local speed = transform.move_speed or 6.0
 			local dt = sim.get_dt and sim.get_dt() or 1/60
 			local grid_dx = self.move_dx * speed * dt
 			local grid_dy = self.move_dy * speed * dt
 			cmd.move_entity(self.entity_id, grid_dx, grid_dy)
-			cmd.set_entity_state_flag(self.entity_id, "moving", "true")
-			if self.move_dx > 0 then
-				cmd.set_entity_state_flag(self.entity_id, "facing", "east")
-			elseif self.move_dx < 0 then
-				cmd.set_entity_state_flag(self.entity_id, "facing", "west")
-			elseif self.move_dy > 0 then
-				cmd.set_entity_state_flag(self.entity_id, "facing", "north")
-			elseif self.move_dy < 0 then
-				cmd.set_entity_state_flag(self.entity_id, "facing", "south")
-			end
-		else
-			cmd.set_entity_state_flag(self.entity_id, "moving", "false")
 		end
 	end
 end
@@ -124,6 +142,27 @@ function M.on_input(self, action_id, action)
 		return true
 	elseif action_id == hash("key_tab") and action.pressed then
 		show_player_stats(self)
+		return true
+	elseif action_id == hash("key_1") and action.pressed then
+		-- Spawn decorative statue adjacent to player's facing
+		local t = sim.get_entity_transform and sim.get_entity_transform(self.entity_id)
+		if t then
+			local dx, dy = 0, 0
+			local f = t.facing or "south"
+			if f == "east" then
+				dx = 1
+			elseif f == "west" then
+				dx = -1
+			elseif f == "north" then
+				dy = 1
+			else
+				dy = -1
+			end
+			-- Convert to integer grid coordinates
+			local grid_x = math.floor(t.grid_x or 0)
+			local grid_y = math.floor(t.grid_y or 0)
+			cmd.spawn_entity("decorative_statue", grid_x + dx, grid_y + dy, t.floor_z or 0)
+		end
 		return true
 	end
 	return false

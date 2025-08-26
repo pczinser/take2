@@ -62,14 +62,17 @@ void CommandQueue::ProcessCommands(uint32_t current_tick) {
             case CMD_SET_OBSERVER_POSITION:
                 ProcessSetObserverPosition(cmd);
                 break;
-            case CMD_SET_ENTITY_STATE_FLAG:
-                ProcessSetEntityStateFlag(cmd);
-                break;
             case CMD_SPAWN_FLOOR_AT_Z:
                 ProcessSpawnFloorAtZ(cmd);
                 break;
             case CMD_OBSERVER_FOLLOW_ENTITY:
                 ProcessObserverFollowEntity(cmd);
+                break;
+            case CMD_SET_ANIMATION_STATE:
+                ProcessSetAnimationState(cmd);
+                break;
+            case CMD_SET_ENTITY_FACING:
+                ProcessSetEntityFacing(cmd);
                 break;
             default:
                 dmLogWarning("Unknown command type: %u", (unsigned)cmd.type);
@@ -85,6 +88,7 @@ void CommandQueue::ProcessCommands(uint32_t current_tick) {
         EntityId follow_id = (EntityId)it->second;
         auto* t = components::g_transform_components.GetComponent(follow_id);
         if (!t) continue;
+        
         // Keep z from entity floor and tile position from entity grid
         MoveObserver(o.id, t->floor_z, (int32_t)t->grid_x, (int32_t)t->grid_y);
     }
@@ -170,44 +174,6 @@ void CommandQueue::ProcessSetObserverPosition(const Command& cmd) {
     MoveObserver((int32_t)cmd.entity_id, (int32_t)cmd.z, (int32_t)cmd.x, (int32_t)cmd.y);
 }
 
-void CommandQueue::ProcessSetEntityStateFlag(const Command& cmd) {
-    // cmd.entity_id = entity_id
-    // cmd.a = flag hash
-    // cmd.b = value hash
-    const uint64_t H_MOVING = dmHashString64("moving");
-    const uint64_t H_FACING = dmHashString64("facing");
-    const uint64_t H_TRUE   = dmHashString64("true");
-    const uint64_t H_FALSE  = dmHashString64("false");
-    const uint64_t H_EAST   = dmHashString64("east");
-    const uint64_t H_WEST   = dmHashString64("west");
-    const uint64_t H_NORTH  = dmHashString64("north");
-    const uint64_t H_SOUTH  = dmHashString64("south");
-
-    const uint32_t F_MOVING       = 0x01;
-    const uint32_t F_FACING_EAST  = 0x02;
-    const uint32_t F_FACING_WEST  = 0x04;
-    const uint32_t F_FACING_NORTH = 0x08;
-    const uint32_t F_FACING_SOUTH = 0x10;
-
-    auto* comp = components::g_animstate_components.GetComponent(cmd.entity_id);
-    if (!comp) {
-        components::g_animstate_components.AddComponent(cmd.entity_id, components::AnimStateComponent());
-        comp = components::g_animstate_components.GetComponent(cmd.entity_id);
-    }
-    if (!comp) return;
-
-    if (cmd.a == H_MOVING) {
-        if (cmd.b == H_TRUE) comp->flags |= F_MOVING;
-        else if (cmd.b == H_FALSE) comp->flags &= ~F_MOVING;
-    } else if (cmd.a == H_FACING) {
-        comp->flags &= ~(F_FACING_EAST|F_FACING_WEST|F_FACING_NORTH|F_FACING_SOUTH);
-        if (cmd.b == H_EAST) comp->flags |= F_FACING_EAST;
-        else if (cmd.b == H_WEST) comp->flags |= F_FACING_WEST;
-        else if (cmd.b == H_NORTH) comp->flags |= F_FACING_NORTH;
-        else if (cmd.b == H_SOUTH) comp->flags |= F_FACING_SOUTH;
-    }
-}
-
 void CommandQueue::ProcessSpawnFloorAtZ(const Command& cmd) {
     // cmd.z = floor_z (as float, cast to int)
     // cmd.a = width
@@ -233,6 +199,55 @@ void CommandQueue::ProcessObserverFollowEntity(const Command& cmd) {
         }
     }
     g_observer_follow_map[observer_id] = cmd.entity_id;
+}
+
+void CommandQueue::ProcessSetAnimationState(const Command& cmd) {
+    // cmd.entity_id = entity_id
+    // cmd.a = condition key hash
+    // cmd.b = condition value hash
+    
+    const char* key_str = "unknown";
+    const char* value_str = "unknown";
+    
+    // Map common hashes back to strings (this is a simplified approach)
+    if (cmd.a == dmHashString64("moving")) key_str = "moving";
+    else if (cmd.a == dmHashString64("facing")) key_str = "facing";
+    else if (cmd.a == dmHashString64("working")) key_str = "working";
+    else if (cmd.a == dmHashString64("powered")) key_str = "powered";
+    
+    if (cmd.b == dmHashString64("true")) value_str = "true";
+    else if (cmd.b == dmHashString64("false")) value_str = "false";
+    else if (cmd.b == dmHashString64("north")) value_str = "north";
+    else if (cmd.b == dmHashString64("south")) value_str = "south";
+    else if (cmd.b == dmHashString64("east")) value_str = "east";
+    else if (cmd.b == dmHashString64("west")) value_str = "west";
+    
+    auto* comp = components::g_animstate_components.GetComponent(cmd.entity_id);
+    if (!comp) {
+        components::g_animstate_components.AddComponent(cmd.entity_id, components::AnimStateComponent());
+        comp = components::g_animstate_components.GetComponent(cmd.entity_id);
+    }
+    if (!comp) return;
+    
+    comp->SetCondition(key_str, value_str);
+}
+
+void CommandQueue::ProcessSetEntityFacing(const Command& cmd) {
+    // cmd.entity_id = entity_id
+    // cmd.a = facing direction hash
+    
+    const char* facing_str = "south";  // default
+    
+    // Map hash back to string
+    if (cmd.a == dmHashString64("north")) facing_str = "north";
+    else if (cmd.a == dmHashString64("south")) facing_str = "south";
+    else if (cmd.a == dmHashString64("east")) facing_str = "east";
+    else if (cmd.a == dmHashString64("west")) facing_str = "west";
+    
+    auto* comp = components::g_transform_components.GetComponent(cmd.entity_id);
+    if (!comp) return;
+    
+    comp->facing = facing_str;
 }
 
 } // namespace simcore

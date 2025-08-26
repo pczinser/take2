@@ -39,8 +39,8 @@ function command_queue.remove_item_from_inventory(entity_id, slot, quantity)
 end
 
 -- Observer positioning
-function command_queue.set_observer_position(observer_id, floor, x, y)
-	sim.cmd_set_observer_position(observer_id, floor, x, y)
+function command_queue.set_observer_position(observer_id, x, y, floor)
+	sim.cmd_set_observer_position(observer_id, x, y, floor)
 end
 
 -- Observer follow
@@ -48,9 +48,14 @@ function command_queue.observer_follow_entity(entity_id, observer_id)
 	sim.cmd_observer_follow_entity(entity_id, observer_id or 0)
 end
 
--- Entity state flags
-function command_queue.set_entity_state_flag(entity_id, flag, value)
-	sim.cmd_set_entity_state_flag(entity_id, hash(flag), hash(value))
+-- Animation state (new generic system)
+function command_queue.set_animation_state(entity_id, condition_key, condition_value)
+	sim.cmd_set_animation_state(entity_id, condition_key, condition_value)
+end
+
+-- Entity facing
+function command_queue.set_entity_facing(entity_id, facing)
+	sim.cmd_set_entity_facing(entity_id, facing)
 end
 
 -- Convenience functions for common operations

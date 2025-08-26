@@ -1,6 +1,7 @@
 -- Entity loader module for managing entity prototypes and initialization
 
 local entity_loader = {}
+local sim = require("game.scripts.sim")
 
 -- Entity prototypes definition
 local entity_prototypes = {
@@ -40,29 +41,29 @@ local entity_prototypes = {
                 -- Animation mapping based on your atlas structure
                 animations = {
                     idle_north = {
-                        conditions = { facing = "north", moving = false }
+                        conditions = { facing = "north", moving = "false" }
                     },
                     idle_south = {
-                        conditions = { facing = "south", moving = false }
+                        conditions = { facing = "south", moving = "false" }
                     },
                     idle_east = {
-                        conditions = { facing = "east", moving = false }
+                        conditions = { facing = "east", moving = "false" }
                     },
                     idle_west = {
-                        conditions = { facing = "west", moving = false }
+                        conditions = { facing = "west", moving = "false" }
                     },
                     -- Reuse idle animations for walking (temporary)
                     walk_north = {
-                        conditions = { facing = "north", moving = true }
+                        conditions = { facing = "north", moving = "true" }
                     },
                     walk_south = {
-                        conditions = { facing = "south", moving = true }
+                        conditions = { facing = "south", moving = "true" }
                     },
                     walk_east = {
-                        conditions = { facing = "east", moving = true }
+                        conditions = { facing = "east", moving = "true" }
                     },
                     walk_west = {
-                        conditions = { facing = "west", moving = true }
+                        conditions = { facing = "west", moving = "true" }
                     }
                 }
             }
@@ -78,7 +79,7 @@ local entity_prototypes = {
             transform = {
                 move_speed = 0.0,
                 width = 1,
-                height = 1
+                height = 2
             },
             production = {
                 production_rate = 10.0
@@ -131,11 +132,19 @@ local entity_prototypes = {
                 category = "building"
             },
             transform = {
-                move_speed = 0.0
+                move_speed = 0.0,
+                width = 1,
+                height = 1
             },
-            -- No inventory, no production, no health - just metadata and building
+            visual = {
+                atlas_path = "/asset/atlas/building.atlas",
+                layer = 1,
+                animations = {
+                    obelisk = {}
+                }
+            }
         }
-    }
+    },
 }
 
 -- Initialize entity system

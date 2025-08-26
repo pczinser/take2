@@ -15,9 +15,10 @@ enum CommandType : uint32_t {
     CMD_ADD_ITEM_TO_INVENTORY,
     CMD_REMOVE_ITEM_FROM_INVENTORY,
     CMD_SET_OBSERVER_POSITION,
-    CMD_SET_ENTITY_STATE_FLAG,
     CMD_SPAWN_FLOOR_AT_Z,
     CMD_OBSERVER_FOLLOW_ENTITY,
+    CMD_SET_ANIMATION_STATE,
+    CMD_SET_ENTITY_FACING,
     CMD_COUNT
 };
 
@@ -59,9 +60,10 @@ private:
     void ProcessAddItemToInventory(const Command& cmd);
     void ProcessRemoveItemFromInventory(const Command& cmd);
     void ProcessSetObserverPosition(const Command& cmd);
-    void ProcessSetEntityStateFlag(const Command& cmd);
     void ProcessSpawnFloorAtZ(const Command& cmd);
     void ProcessObserverFollowEntity(const Command& cmd);
+    void ProcessSetAnimationState(const Command& cmd);
+    void ProcessSetEntityFacing(const Command& cmd);
 };
 
 // Global command queue instance

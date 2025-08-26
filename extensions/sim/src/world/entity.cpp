@@ -393,6 +393,12 @@ void CloneComponentsFromEntity(EntityId source_id, EntityId target_id, float gri
         components::g_animstate_components.AddComponent(target_id, *source_anim);
     }
     
+    // Clone visual component
+    components::VisualComponent* source_visual = components::g_visual_components.GetComponent(source_id);
+    if (source_visual) {
+        components::g_visual_components.AddComponent(target_id, *source_visual);
+    }
+    
     printf("Cloned all components from entity %d to entity %d\n", source_id, target_id);
 }
 

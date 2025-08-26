@@ -21,11 +21,15 @@ local function load_behavior_for_prototype(self, prototype_name)
 	if self.behavior and self.behavior.init then
 		self.behavior.init(self)
 	end
-	-- Ensure input focus if behavior handles input
-	if self.behavior and self.behavior.on_input and not self._has_input_focus then
+	-- Ensure input focus only for behaviors that explicitly opt-in
+	local wants_input = (self.behavior and self.behavior.wants_input == true)
+	if wants_input and self.behavior and self.behavior.on_input and not self._has_input_focus then
 		print("ENTITY ADAPTER:", go.get_id(), "acquiring input focus for behavior on_input")
 		msg.post(".", "acquire_input_focus")
 		self._has_input_focus = true
+		if self.behavior.on_acquire_input then
+			self.behavior.on_acquire_input(self)
+		end
 	end
 end
 

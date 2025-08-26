@@ -118,6 +118,62 @@ static int L_get_entity_metadata(lua_State* L) {
     return 1;
 }
 
+static int L_get_entity_visual_config(lua_State* L) {
+    EntityId entity_id = (EntityId)luaL_checkinteger(L, 1);
+    
+    components::VisualComponent* visual = components::g_visual_components.GetComponent(entity_id);
+    if (!visual) {
+        lua_pushnil(L);
+        return 1;
+    }
+    
+    lua_newtable(L);
+    lua_pushstring(L, visual->atlas_path.c_str());
+    lua_setfield(L, -2, "atlas_path");
+    
+    lua_pushinteger(L, visual->layer);
+    lua_setfield(L, -2, "layer");
+    
+    // Create animations table
+    lua_newtable(L);
+    for (const auto& anim : visual->animations) {
+        lua_newtable(L);
+        
+        // Create conditions table
+        lua_newtable(L);
+        for (const auto& [key, value] : anim.conditions) {
+            lua_pushstring(L, key.c_str());
+            lua_pushstring(L, value.c_str());
+            lua_settable(L, -3);
+        }
+        lua_setfield(L, -2, "conditions");
+        
+        lua_setfield(L, -2, anim.name.c_str());
+    }
+    lua_setfield(L, -2, "animations");
+    
+    return 1;
+}
+
+static int L_get_entity_animation_state(lua_State* L) {
+    EntityId entity_id = (EntityId)luaL_checkinteger(L, 1);
+    
+    components::AnimStateComponent* anim_state = components::g_animstate_components.GetComponent(entity_id);
+    if (!anim_state) {
+        lua_pushnil(L);
+        return 1;
+    }
+    
+    lua_newtable(L);
+    for (const auto& [key, value] : anim_state->conditions) {
+        lua_pushstring(L, key.c_str());
+        lua_pushstring(L, value.c_str());
+        lua_settable(L, -3);
+    }
+    
+    return 1;
+}
+
 static int L_get_entity_transform(lua_State* L) {
     EntityId entity_id = (EntityId)luaL_checkinteger(L, 1);
     
@@ -128,16 +184,13 @@ static int L_get_entity_transform(lua_State* L) {
     }
     
     lua_newtable(L);
-    lua_pushnumber(L, transform->grid_x);
-    lua_setfield(L, -2, "grid_x");
-    lua_pushnumber(L, transform->grid_y);
-    lua_setfield(L, -2, "grid_y");
-    lua_pushinteger(L, transform->floor_z);
-    lua_setfield(L, -2, "floor_z");
-    lua_pushinteger(L, transform->chunk_x);
-    lua_setfield(L, -2, "chunk_x");
-    lua_pushinteger(L, transform->chunk_y);
-    lua_setfield(L, -2, "chunk_y");
+    lua_pushnumber(L, transform->grid_x); lua_setfield(L, -2, "grid_x");
+    lua_pushnumber(L, transform->grid_y); lua_setfield(L, -2, "grid_y");
+    lua_pushinteger(L, transform->floor_z); lua_setfield(L, -2, "floor_z");
+    lua_pushnumber(L, transform->move_speed); lua_setfield(L, -2, "move_speed");
+    lua_pushinteger(L, transform->width); lua_setfield(L, -2, "width");
+    lua_pushinteger(L, transform->height); lua_setfield(L, -2, "height");
+    lua_pushstring(L, transform->facing.c_str()); lua_setfield(L, -2, "facing");
     
     return 1;
 }
@@ -464,6 +517,72 @@ static void CreateComponentInstancesFromLua(EntityId entity_id, const std::strin
     }
     lua_pop(L, 1);
     
+    // Parse visual component
+    lua_getfield(L, -1, "visual");
+    if (lua_istable(L, -1)) {
+        std::string atlas_path = "/asset/atlas/player.atlas";  // Default atlas
+        int32_t layer = 1;
+        
+        lua_getfield(L, -1, "atlas_path");
+        if (lua_isstring(L, -1)) {
+            atlas_path = lua_tostring(L, -1);
+        }
+        lua_pop(L, 1);
+        
+        lua_getfield(L, -1, "layer");
+        if (lua_isnumber(L, -1)) {
+            layer = (int32_t)lua_tonumber(L, -1);
+        }
+        lua_pop(L, 1);
+        
+        components::VisualComponent visual_comp(atlas_path, layer);
+        
+        // Parse animations
+        lua_getfield(L, -1, "animations");
+        if (lua_istable(L, -1)) {
+            lua_pushnil(L);  // First key
+            while (lua_next(L, -2) != 0) {
+                // Key is at index -2, value is at index -1
+                if (lua_isstring(L, -2) && lua_istable(L, -1)) {
+                    std::string anim_name = lua_tostring(L, -2);
+                    components::VisualComponent::AnimationCondition anim_cond(anim_name);
+                    
+                    // Parse conditions
+                    lua_getfield(L, -1, "conditions");
+                    if (lua_istable(L, -1)) {
+                        lua_pushnil(L);  // First key
+                        while (lua_next(L, -2) != 0) {
+                            // Key is at index -2, value is at index -1
+                            if (lua_isstring(L, -2)) {
+                                std::string condition_key = lua_tostring(L, -2);
+                                std::string condition_value;
+                                
+                                if (lua_isstring(L, -1)) {
+                                    condition_value = lua_tostring(L, -1);
+                                } else if (lua_isboolean(L, -1)) {
+                                    condition_value = lua_toboolean(L, -1) ? "true" : "false";
+                                } else if (lua_isnumber(L, -1)) {
+                                    condition_value = std::to_string(lua_tonumber(L, -1));
+                                }
+                                
+                                anim_cond.conditions[condition_key] = condition_value;
+                            }
+                            lua_pop(L, 1);  // Remove value, keep key for next iteration
+                        }
+                    }
+                    lua_pop(L, 1);  // Pop conditions table
+                    
+                    visual_comp.animations.push_back(anim_cond);
+                }
+                lua_pop(L, 1);  // Remove value, keep key for next iteration
+            }
+        }
+        lua_pop(L, 1);  // Pop animations table
+        
+        components::g_visual_components.AddComponent(entity_id, visual_comp);
+    }
+    lua_pop(L, 1);
+    
     lua_pop(L, 1); // Pop components table
 }
 
@@ -772,7 +891,9 @@ static const luaL_Reg sim_functions[] = {
     
     // Component access functions
     {"get_entity_metadata", L_get_entity_metadata},
+    {"get_entity_visual_config", L_get_entity_visual_config},
     {"get_entity_transform", L_get_entity_transform},
+    {"get_entity_animation_state", L_get_entity_animation_state},
     
     // Spatial query functions
     {"get_entities_in_chunk", L_get_entities_in_chunk},

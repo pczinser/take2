@@ -51,7 +51,8 @@ Available commands (Lua wrappers):
 - `set_entity_floor(entity_id, floor)`
 - `add_item_to_inventory(entity_id, slot, item_type, quantity)`
 - `remove_item_from_inventory(entity_id, slot, quantity)`
-- `set_entity_state_flag(entity_id, flag, value)` – e.g., `("moving","true")`, `("facing","east")`
+- `set_animation_state(entity_id, key, value)` – e.g., `("moving","true")`, `("facing","east")`
+- `set_entity_facing(entity_id, facing)` – e.g., `("north")`, `("south")`, `("east")`, `("west")`
 - `set_observer_position(observer_id, floor, x, y)` – safety net
 - `observer_follow_entity(entity_id[, observer_id=0])` – recommended
 - `spawn_floor_at_z(z, width, height, start_x, start_y)`
@@ -61,7 +62,8 @@ Example usage:
 local cmd = require("game.scripts.command_queue")
 cmd.spawn_entity("player", 0, 0, 0)
 cmd.observer_follow_entity(player_id)
-cmd.set_entity_state_flag(player_id, "moving", "true")
+cmd.set_animation_state(player_id, "moving", "true")
+cmd.set_animation_state(player_id, "facing", "east")
 ```
 
 ## Snapshot access (read-only)

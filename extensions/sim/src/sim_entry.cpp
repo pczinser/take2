@@ -1,9 +1,44 @@
 // sim_entry.cpp
 // Entry TU with extension registration and scheduler
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// SNAPSHOT BUFFER SYSTEM DOCUMENTATION
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// This file implements a single contiguous data stream approach for entity snapshots
+// to avoid Defold's multi-stream interleaving issues that caused memory corruption.
+//
+// HOW TO ADD NEW DATA FIELDS:
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// 1. Update ENTITY_FIELD_COUNT and add new FIELD_* constants:
+//    #define ENTITY_FIELD_COUNT 9    // Increment from 8 to 9
+//    #define FIELD_NEW_DATA 8        // Add after FIELD_FLAGS
+//
+// 2. Update buffer initialization in CreateAndFillSnapshot():
+//    datap[base + FIELD_NEW_DATA] = 0.0f;
+//
+// 3. Update entity filling loop:
+//    datap[base + FIELD_NEW_DATA] = get_new_data_value(ent);
+//
+// 4. Update Lua extraction in visual_manager.script:
+//    streams.curr.new_data[i] = data_stream[base + 9]  -- 9th field
+//
+// 5. Update Lua processing in visual_manager.lua:
+//    local new_data = data_stream[base + 9]
+//
+// MEMORY LAYOUT:
+// ═══════════════════════════════════════════════════════════════════════════════
+// Each entity occupies ENTITY_FIELD_COUNT consecutive floats in the data stream:
+// [id, x, y, z, vx, vy, ang, flags, new_data, ...]
+//
+// Access pattern: datap[entity_index * ENTITY_FIELD_COUNT + field_offset]
+// ═══════════════════════════════════════════════════════════════════════════════
+
 #include <dmsdk/sdk.h>
 #include <dmsdk/dlib/buffer.h>
 #include <dmsdk/dlib/message.h>
+#include <cmath>
 
 #include "core/sim_time.hpp"
 #include "activation/activation.hpp"
@@ -54,6 +89,13 @@ static void CreateAndFillSnapshot(dmBuffer::HBuffer& out_buf) {
     const auto& entities = GetAllEntities();
     const uint32_t rows = (uint32_t)entities.size();
     s_curr_rows = rows;
+    
+    // Validate entity IDs (log only invalid ones)
+    for (uint32_t i = 0; i < rows; ++i) {
+        if (entities[i].id == 0) {
+            dmLogWarning("Entity[%u] has invalid ID=0", i);
+        }
+    }
 
     if (rows == 0) {
         // No entities this tick
@@ -61,76 +103,116 @@ static void CreateAndFillSnapshot(dmBuffer::HBuffer& out_buf) {
         return;
     }
 
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // BUFFER ARCHITECTURE: Single Contiguous Data Stream
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // 
+    // We use a single "data" stream with 8 float32 components per entity to avoid
+    // Defold's multi-stream interleaving issues that caused memory corruption.
+    // 
+    // Layout per entity (8 consecutive floats):
+    //   [0] id    - Entity ID (stored as float, convert to uint32 in Lua)
+    //   [1] x     - World X coordinate  
+    //   [2] y     - World Y coordinate
+    //   [3] z     - World Z coordinate (floor level)
+    //   [4] vx    - X velocity component
+    //   [5] vy    - Y velocity component  
+    //   [6] ang   - Rotation angle (radians)
+    //   [7] flags - Entity flags (stored as float, convert to uint32 in Lua)
+    //
+    // Memory layout: [ent0_id, ent0_x, ent0_y, ent0_z, ent0_vx, ent0_vy, ent0_ang, ent0_flags,
+    //                 ent1_id, ent1_x, ent1_y, ent1_z, ent1_vx, ent1_vy, ent1_ang, ent1_flags, ...]
+    //
+    // Access pattern: datap[entity_index * 8 + field_offset]
+    // ═══════════════════════════════════════════════════════════════════════════════
+
+    #define ENTITY_FIELD_COUNT 8
+    #define FIELD_ID    0
+    #define FIELD_X     1  
+    #define FIELD_Y     2
+    #define FIELD_Z     3
+    #define FIELD_VX    4
+    #define FIELD_VY    5
+    #define FIELD_ANG   6
+    #define FIELD_FLAGS 7
+
     dmBuffer::StreamDeclaration decl[] = {
-        { dmHashString64("id"),    dmBuffer::VALUE_TYPE_UINT32, 1 },
-        { dmHashString64("x"),     dmBuffer::VALUE_TYPE_FLOAT32,1 },
-        { dmHashString64("y"),     dmBuffer::VALUE_TYPE_FLOAT32,1 },
-        { dmHashString64("z"),     dmBuffer::VALUE_TYPE_FLOAT32,1 },
-        { dmHashString64("vx"),    dmBuffer::VALUE_TYPE_FLOAT32,1 },
-        { dmHashString64("vy"),    dmBuffer::VALUE_TYPE_FLOAT32,1 },
-        { dmHashString64("ang"),   dmBuffer::VALUE_TYPE_FLOAT32,1 }, // radians
-        { dmHashString64("flags"), dmBuffer::VALUE_TYPE_UINT32, 1 },
+        { dmHashString64("data"), dmBuffer::VALUE_TYPE_FLOAT32, ENTITY_FIELD_COUNT },
     };
 
     dmBuffer::HBuffer buf = 0;
-    dmBuffer::Result cr = dmBuffer::Create(rows, decl, (uint8_t)DM_ARRAY_SIZE(decl), &buf);
+    dmBuffer::Result cr = dmBuffer::Create(rows, decl, 1, &buf);
     if (cr != dmBuffer::RESULT_OK) {
         dmLogError("Failed to create snapshot buffer (rows=%u)", rows);
         out_buf = 0;
         return;
     }
+    
+    if (buf == 0) {
+        dmLogError("Buffer creation returned null handle");
+        out_buf = 0;
+        return;
+    }
 
-    // Streams
-    uint32_t *idp, *flagsp;
-    float *xp, *yp, *zp, *vxp, *vyp, *angp;
+    // Get the data stream
+    float *datap;
     uint32_t count = 0, comps = 0, stride = 0;
+    dmBuffer::Result sr = dmBuffer::GetStream(buf, dmHashString64("data"), (void**)&datap, &count, &comps, &stride);
+    
+    if (!datap || count != rows) {
+        dmLogError("Failed to get valid stream pointer or count mismatch (expected %u, got %u)", rows, count);
+        dmBuffer::Destroy(buf);
+        out_buf = 0;
+        return;
+    }
 
-    dmBuffer::GetStream(buf, dmHashString64("id"),    (void**)&idp,    &count, &comps, &stride);
-    dmBuffer::GetStream(buf, dmHashString64("x"),     (void**)&xp,     &count, &comps, &stride);
-    dmBuffer::GetStream(buf, dmHashString64("y"),     (void**)&yp,     &count, &comps, &stride);
-    dmBuffer::GetStream(buf, dmHashString64("z"),     (void**)&zp,     &count, &comps, &stride);
-    dmBuffer::GetStream(buf, dmHashString64("vx"),    (void**)&vxp,    &count, &comps, &stride);
-    dmBuffer::GetStream(buf, dmHashString64("vy"),    (void**)&vyp,    &count, &comps, &stride);
-    dmBuffer::GetStream(buf, dmHashString64("ang"),   (void**)&angp,   &count, &comps, &stride);
-    dmBuffer::GetStream(buf, dmHashString64("flags"), (void**)&flagsp, &count, &comps, &stride);
-
-    // Zero-initialize all streams to avoid uninitialized subnormal values
-    memset(idp,    0, sizeof(uint32_t) * rows);
-    memset(flagsp, 0, sizeof(uint32_t) * rows);
-    memset(xp,     0, sizeof(float)    * rows);
-    memset(yp,     0, sizeof(float)    * rows);
-    memset(zp,     0, sizeof(float)    * rows);
-    memset(vxp,    0, sizeof(float)    * rows);
-    memset(vyp,    0, sizeof(float)    * rows);
-    memset(angp,   0, sizeof(float)    * rows);
-
-    // Fill rows
+    // Zero-initialize all data to avoid uninitialized values
     for (uint32_t i = 0; i < rows; ++i) {
+        uint32_t base = i * ENTITY_FIELD_COUNT;
+        datap[base + FIELD_ID]    = 0.0f;
+        datap[base + FIELD_X]     = 0.0f;
+        datap[base + FIELD_Y]     = 0.0f;
+        datap[base + FIELD_Z]     = 0.0f;
+        datap[base + FIELD_VX]    = 0.0f;
+        datap[base + FIELD_VY]    = 0.0f;
+        datap[base + FIELD_ANG]   = 0.0f;
+        datap[base + FIELD_FLAGS] = 0.0f;
+    }
+
+    // Fill entity data
+    for (uint32_t i = 0; i < rows && i < count; ++i) {
         const auto& row = entities[i];
         const Entity* ent = GetEntity(row.id);
-        idp[i] = row.id;
+        uint32_t base = i * ENTITY_FIELD_COUNT;
 
-        if (!ent) {
-            xp[i]=yp[i]=zp[i]=vxp[i]=vyp[i]=angp[i]=0.0f;
-            flagsp[i]=0u;
+        if (!ent || row.id == 0) {
+            // Entity not found or invalid ID - leave as zeros (already initialized)
             continue;
         }
 
-        // Read components
-        const components::TransformComponent* t = components::g_transform_components.GetComponent(row.id);
-        const components::AnimStateComponent* s = components::g_animstate_components.GetComponent(row.id);
+        // Set entity ID
+        datap[base + FIELD_ID] = (float)row.id;
 
-        if (t) {
-            xp[i]   = t->grid_x * 64.0f;  // Convert grid to world units
-            yp[i]   = t->grid_y * 64.0f;
-            zp[i]   = (float)t->floor_z;
-            vxp[i]  = 0.0f;  // TODO: velocity from physics
-            vyp[i]  = 0.0f;
-        } else {
-            xp[i]=yp[i]=zp[i]=vxp[i]=vyp[i]=0.0f;
+        // Get transform component and write position data
+        const components::TransformComponent* t = components::g_transform_components.GetComponent(row.id);
+        if (t && std::isfinite(t->grid_x) && std::isfinite(t->grid_y) && std::isfinite((float)t->floor_z)) {
+            // Convert grid coordinates to world coordinates
+            float world_x = t->grid_x * 64.0f;
+            float world_y = t->grid_y * 64.0f;
+            float world_z = (float)t->floor_z;
+            
+            if (std::isfinite(world_x) && std::isfinite(world_y) && std::isfinite(world_z)) {
+                datap[base + FIELD_X] = world_x;
+                datap[base + FIELD_Y] = world_y;
+                datap[base + FIELD_Z] = world_z;
+            }
         }
-        angp[i] = s ? s->facing_angle : 0.0f;
-        flagsp[i] = s ? s->flags : 0u;
+        
+        // Set other fields (TODO: get from actual components)
+        datap[base + FIELD_VX]    = 0.0f;  // TODO: velocity from physics
+        datap[base + FIELD_VY]    = 0.0f;  // TODO: velocity from physics
+        datap[base + FIELD_ANG]   = 0.0f;  // TODO: rotation from transform
+        datap[base + FIELD_FLAGS] = 0.0f;  // TODO: entity flags
     }
 
     out_buf = buf;
@@ -160,28 +242,23 @@ static void StepOneTick(float dt_fixed) {
     Extractor_Step(dt_fixed);
     // Inventory_Tick(dt_fixed); // uncomment if you tick inventory here
 
-    // 3) rotate buffers: destroy the older 'prev', move 'curr' to 'prev', create a new 'curr'
-    if (s_prev_snapshot) {
-        dmBuffer::Destroy(s_prev_snapshot);
-        s_prev_snapshot = 0;
-    }
-    s_prev_snapshot = s_curr_snapshot; // last frame becomes 'prev'
+    // Rotate buffers: move 'curr' to 'prev', create a new 'curr'
+    // Note: We don't destroy s_prev_snapshot here because Lua might still be using it
+    // The buffer will be garbage collected when Lua releases its reference
+    s_prev_snapshot = s_curr_snapshot;
     s_curr_snapshot = 0;
     CreateAndFillSnapshot(s_curr_snapshot);
 
-    // Boot diagnostics: print first ticks' snapshot summary
-    if (s_debug_ticks_printed < 8) {
-        uint32_t *idp = 0; float *xp = 0, *yp = 0, *zp = 0; uint32_t n = 0, comps = 0, stride = 0;
+    // Boot diagnostics: print first few ticks' summary
+    if (s_debug_ticks_printed < 3) {
+        float *datap = 0; uint32_t n = 0, comps = 0, stride = 0;
         if (s_curr_snapshot) {
-            dmBuffer::GetStream(s_curr_snapshot, dmHashString64("id"), (void**)&idp, &n, &comps, &stride);
-            dmBuffer::GetStream(s_curr_snapshot, dmHashString64("x"),  (void**)&xp,  &n, &comps, &stride);
-            dmBuffer::GetStream(s_curr_snapshot, dmHashString64("y"),  (void**)&yp,  &n, &comps, &stride);
-            dmBuffer::GetStream(s_curr_snapshot, dmHashString64("z"),  (void**)&zp,  &n, &comps, &stride);
+            dmBuffer::GetStream(s_curr_snapshot, dmHashString64("data"), (void**)&datap, &n, &comps, &stride);
         }
-        if (idp && n > 0) {
-            dmLogInfo("SNAPSHOT tick=%u rows=%u first_id=%u pos=(%f,%f,%f)", s_current_tick, n, idp[0], xp[0], yp[0], zp[0]);
+        if (datap && n > 0) {
+            dmLogInfo("SNAPSHOT tick=%u entities=%u", s_current_tick, n);
         } else {
-            dmLogInfo("SNAPSHOT tick=%u rows=0", s_current_tick);
+            dmLogInfo("SNAPSHOT tick=%u entities=0", s_current_tick);
         }
         ++s_debug_ticks_printed;
     }
@@ -199,6 +276,12 @@ static dmExtension::Result AppFinalize  (dmExtension::AppParams*) { return dmExt
 
 static dmExtension::Result Initialize(dmExtension::Params* params) {
     TimeInit();
+
+    // Test buffer creation first
+    // extern void TestBufferCreation();
+    // extern void DebugBufferIssue();
+    // TestBufferCreation();
+    // DebugBufferIssue();
 
     // world & systems
     InitializeEntitySystem();

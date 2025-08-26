@@ -17,7 +17,7 @@ function init(self)
     
     -- Subscribe to bus for ticks with our URL
     print("World manager subscribing to sim_bus...")
-    bus.subscribe(msg.url())
+    bus.subscribe_world(msg.url())
     print("World manager subscribed to sim_bus")
 end
 
@@ -41,7 +41,7 @@ function on_message(self, message_id, message, sender)
         self._debug_ticks = (self._debug_ticks or 0)
         if self._debug_ticks < 8 then
             local vc = world.get_visual_chunks(0)
-            print("WORLD DEBUG: hot chunks=", #vc)
+
             self._debug_ticks = self._debug_ticks + 1
         end
         load_active_chunks()

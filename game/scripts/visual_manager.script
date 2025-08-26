@@ -7,7 +7,7 @@ local visual_manager = require("game.scripts.visual_manager")
 function init(self)
     -- Ensure module is initialized once
     visual_manager.init()
-    bus.subscribe(msg.url())
+    bus.subscribe_visual(msg.url())
 end
 
 function on_message(self, message_id, message, sender)
@@ -17,18 +17,40 @@ function on_message(self, message_id, message, sender)
         
         if not curr then return end
         
+        -- Extract data from the single data stream (8 floats per entity)
+        local data_stream = buffer.get_stream(curr, hash("data"))
+        if not data_stream then
+            return
+        end
+        
+        local count = #data_stream / 8  -- 8 floats per entity
+        
+        -- Manually extract individual arrays from the data stream
         local streams = {
             curr = {
-                id = buffer.get_stream(curr, hash("id")),
-                x = buffer.get_stream(curr, hash("x")),
-                y = buffer.get_stream(curr, hash("y")),
-                z = buffer.get_stream(curr, hash("z")),
-                vx = buffer.get_stream(curr, hash("vx")),
-                vy = buffer.get_stream(curr, hash("vy")),
-                ang = buffer.get_stream(curr, hash("ang")),
-                flags = buffer.get_stream(curr, hash("flags")),
+                id = {},
+                x = {},
+                y = {},
+                z = {},
+                vx = {},
+                vy = {},
+                ang = {},
+                flags = {},
             }
         }
+        
+        -- Extract data: each entity has 8 consecutive floats
+        for i = 1, count do
+            local base = (i - 1) * 8
+            streams.curr.id[i] = math.floor(data_stream[base + 1])  -- id (convert back to int)
+            streams.curr.x[i] = data_stream[base + 2]              -- x
+            streams.curr.y[i] = data_stream[base + 3]              -- y
+            streams.curr.z[i] = data_stream[base + 4]              -- z
+            streams.curr.vx[i] = data_stream[base + 5]             -- vx
+            streams.curr.vy[i] = data_stream[base + 6]             -- vy
+            streams.curr.ang[i] = data_stream[base + 7]            -- ang
+            streams.curr.flags[i] = math.floor(data_stream[base + 8])  -- flags (convert back to int)
+        end
 
         -- Boot diagnostics: print stream lengths and first few values once
         self._vm_debug_once = self._vm_debug_once or false
@@ -52,22 +74,38 @@ function on_message(self, message_id, message, sender)
             local z1 = safe_index(streams.curr.z, 1)
             local z2 = safe_index(streams.curr.z, 2)
             local z3 = safe_index(streams.curr.z, 3)
-            print("VM DEBUG: lens id/x/y/z =", streams.curr.id and #streams.curr.id or 0, streams.curr.x and #streams.curr.x or 0, streams.curr.y and #streams.curr.y or 0, streams.curr.z and #streams.curr.z or 0)
-            print("VM DEBUG: head id=", id1, id2, id3, " x=", x1, x2, x3, " y=", y1, y2, y3, " z=", z1, z2, z3)
+
             self._vm_debug_once = true
         end
 
         if prev then
-            streams.prev = {
-                id = buffer.get_stream(prev, hash("id")),
-                x = buffer.get_stream(prev, hash("x")),
-                y = buffer.get_stream(prev, hash("y")),
-                z = buffer.get_stream(prev, hash("z")),
-                vx = buffer.get_stream(prev, hash("vx")),
-                vy = buffer.get_stream(prev, hash("vy")),
-                ang = buffer.get_stream(prev, hash("ang")),
-                flags = buffer.get_stream(prev, hash("flags")),
-            }
+            local prev_data_stream = buffer.get_stream(prev, hash("data"))
+            if prev_data_stream then
+                local prev_count = #prev_data_stream / 8
+                streams.prev = {
+                    id = {},
+                    x = {},
+                    y = {},
+                    z = {},
+                    vx = {},
+                    vy = {},
+                    ang = {},
+                    flags = {},
+                }
+                
+                -- Extract prev data
+                for i = 1, prev_count do
+                    local base = (i - 1) * 8
+                    streams.prev.id[i] = math.floor(prev_data_stream[base + 1])
+                    streams.prev.x[i] = prev_data_stream[base + 2]
+                    streams.prev.y[i] = prev_data_stream[base + 3]
+                    streams.prev.z[i] = prev_data_stream[base + 4]
+                    streams.prev.vx[i] = prev_data_stream[base + 5]
+                    streams.prev.vy[i] = prev_data_stream[base + 6]
+                    streams.prev.ang[i] = prev_data_stream[base + 7]
+                    streams.prev.flags[i] = math.floor(prev_data_stream[base + 8])
+                end
+            end
         end
 
         -- Delegate to the module to update visuals
