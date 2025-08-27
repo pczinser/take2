@@ -50,6 +50,7 @@ embedded_instances {
   "  id: \"chunk_factory\"\n"
   "  type: \"collectionfactory\"\n"
   "  data: \"prototype: \\\"/game/collection/chunk.collection\\\"\\n"
+  "load_dynamically: true\\n"
   "\"\n"
   "}\n"
   "embedded_components {\n"

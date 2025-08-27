@@ -213,23 +213,22 @@ function visual_manager.on_snapshot_tick(streams, alpha, sim_api)
 						visual_manager.attach(id, cfg, vmath.vector3(wx, wy, cfg.layer or 1))
 					end
 				end
-				-- Update attached visuals and ensure visible
+				-- Update attached visuals
 				if visual_manager.has_entity(id) then
-					local data = visual_manager.by_entity[id]
-					if data and data.sprite then pcall(go.set, data.sprite, "enabled", true) end
 					visual_manager.update_from_snapshot(id, { x = wx, y = wy, z = z })
 					seen[id] = true
 				end
 			end
-					-- If not visible but attached, hide sprite (don't detach here)
-		if (not visible) and visual_manager.has_entity(id) then
-			local data = visual_manager.by_entity[id]
-			if data and data.sprite then pcall(go.set, data.sprite, "enabled", false) end
-		end
 		end
 	end
 
-	-- Do not detach based on visibility; detach only on explicit despawn
+	-- Detach entities that are no longer visible (left hot chunk zone)
+	for entity_id, _ in pairs(visual_manager.by_entity) do
+		if not seen[entity_id] then
+			print("VISUAL: Detaching entity", entity_id, "- left hot chunk zone")
+			visual_manager.detach(entity_id)
+		end
+	end
 end
 
 -- Explicit attach/detach via bus messages
