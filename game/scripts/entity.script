@@ -1,0 +1,91 @@
+local sim = require("game.scripts.sim")
+-- Ensure behavior modules are bundled for this collection (loaded via collection proxy)
+-- Defold packages requires per-collection; load behavior index here so the game collection includes them
+local _ = require("game.scripts.module.entity.behavior.index")
+
+-- Properties can be passed from factory.create
+go.property("entity_id", 0)
+
+local function safe_require(path)
+	local ok, mod = pcall(require, path)
+	if ok then return mod end
+	return nil
+end
+
+local function load_behavior_for_prototype(self, prototype_name)
+	if not prototype_name or prototype_name == "" then return end
+	local path = string.format("game.scripts.module.entity.behavior.%s", prototype_name)
+	self.behavior = safe_require(path)
+	if self.behavior and self.behavior.init then
+		self.behavior.init(self)
+	end
+	-- Ensure input focus only for behaviors that explicitly opt-in
+	local wants_input = (self.behavior and self.behavior.wants_input == true)
+	if wants_input and self.behavior and self.behavior.on_input and not self._has_input_focus then
+		print("ENTITY ADAPTER:", go.get_id(), "acquiring input focus for behavior on_input")
+		msg.post(".", "acquire_input_focus")
+		self._has_input_focus = true
+		if self.behavior.on_acquire_input then
+			self.behavior.on_acquire_input(self)
+		end
+	end
+end
+
+local function bind_from_entity_id(self, id, prototype_name)
+	self.entity_id = id
+	if not prototype_name or prototype_name == "" then
+		local ent = sim.get_entity(id)
+		prototype_name = ent and ent.prototype_name or nil
+	end
+	self.prototype = prototype_name
+
+	load_behavior_for_prototype(self, prototype_name)
+end
+
+function init(self)
+	self.entity_id = (self.entity_id ~= 0) and self.entity_id or nil
+	self.prototype = nil
+	self.behavior = nil
+	self._has_input_focus = false
+
+	if self.entity_id then
+		bind_from_entity_id(self, self.entity_id, nil)
+		-- Atlas setting is now handled by visual_manager.attach()
+	end
+end
+
+function on_message(self, message_id, message, sender)
+	if message_id == hash("bind_entity") then
+		if message and message.entity_id then
+			bind_from_entity_id(self, message.entity_id, message.prototype)
+		end
+
+	elseif self.behavior and self.behavior.on_message then
+		self.behavior.on_message(self, message_id, message, sender)
+	end
+end
+
+function update(self, dt)
+	if self.behavior and self.behavior.update then
+		self.behavior.update(self, dt)
+	end
+end
+
+function on_input(self, action_id, action)
+	if self.behavior and self.behavior.on_input then
+		return self.behavior.on_input(self, action_id, action)
+	end
+	return false
+end
+
+function final(self)
+	if self._has_input_focus then
+		print("ENTITY ADAPTER:", go.get_id(), "releasing input focus")
+		msg.post(".", "release_input_focus")
+		self._has_input_focus = false
+	end
+	if self.behavior and self.behavior.final then
+		self.behavior.final(self)
+	end
+end
+

@@ -1,0 +1,26 @@
+local sim = require("game.scripts.sim")
+local bus = require("game.scripts.sim_bus")
+
+local SIM_TICK = hash("sim_tick")
+local SIM_SPAWN = hash("sim_spawn")
+local SIM_DESPAWN = hash("sim_despawn")
+local SIM_EVENT = hash("sim_event")
+
+function init(self)
+	sim.register_listener(msg.url())
+	bus.on_init(sim)
+end
+
+function on_message(self, message_id, message, sender)
+	if message_id == SIM_TICK then
+		bus.on_tick()
+	elseif message_id == SIM_SPAWN then
+		bus.on_spawn(message)
+	elseif message_id == SIM_DESPAWN then
+		bus.on_despawn(message)
+	elseif message_id == SIM_EVENT then
+		bus.on_event(message)
+	end
+end
+
+

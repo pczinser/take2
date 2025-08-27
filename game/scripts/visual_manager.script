@@ -1,0 +1,130 @@
+local bus = require("game.scripts.sim_bus")
+local sim = require("game.scripts.sim")
+local visual_manager = require("game.scripts.visual_manager")
+
+-- This script owns lifecycle and delegates logic to the visual_manager module
+
+function init(self)
+    -- Ensure module is initialized once
+    visual_manager.init()
+    bus.subscribe_visual(msg.url())
+end
+
+function on_message(self, message_id, message, sender)
+    if message_id == hash("bus_tick") then
+        -- Get snapshot data from the sim_bus (which already read it)
+        local prev, curr, alpha, tick = bus.get_snapshots()
+        
+        if not curr then return end
+        
+        -- Extract data from the single data stream (8 floats per entity)
+        local data_stream = buffer.get_stream(curr, hash("data"))
+        if not data_stream then
+            return
+        end
+        
+        local count = #data_stream / 8  -- 8 floats per entity
+        
+        -- Manually extract individual arrays from the data stream
+        local streams = {
+            curr = {
+                id = {},
+                x = {},
+                y = {},
+                z = {},
+                vx = {},
+                vy = {},
+                ang = {},
+                flags = {},
+            }
+        }
+        
+        -- Extract data: each entity has 8 consecutive floats
+        for i = 1, count do
+            local base = (i - 1) * 8
+            streams.curr.id[i] = math.floor(data_stream[base + 1])  -- id (convert back to int)
+            streams.curr.x[i] = data_stream[base + 2]              -- x
+            streams.curr.y[i] = data_stream[base + 3]              -- y
+            streams.curr.z[i] = data_stream[base + 4]              -- z
+            streams.curr.vx[i] = data_stream[base + 5]             -- vx
+            streams.curr.vy[i] = data_stream[base + 6]             -- vy
+            streams.curr.ang[i] = data_stream[base + 7]            -- ang
+            streams.curr.flags[i] = math.floor(data_stream[base + 8])  -- flags (convert back to int)
+        end
+
+        -- Boot diagnostics: print stream lengths and first few values once
+        self._vm_debug_once = self._vm_debug_once or false
+        if not self._vm_debug_once then
+            local function safe_index(arr, idx)
+                if not arr then return 0 end
+                local n = #arr
+                if n < 1 then return 0 end
+                if idx > n then idx = n end
+                return arr[idx] or 0
+            end
+            local id1 = safe_index(streams.curr.id, 1)
+            local id2 = safe_index(streams.curr.id, 2)
+            local id3 = safe_index(streams.curr.id, 3)
+            local x1 = safe_index(streams.curr.x, 1)
+            local x2 = safe_index(streams.curr.x, 2)
+            local x3 = safe_index(streams.curr.x, 3)
+            local y1 = safe_index(streams.curr.y, 1)
+            local y2 = safe_index(streams.curr.y, 2)
+            local y3 = safe_index(streams.curr.y, 3)
+            local z1 = safe_index(streams.curr.z, 1)
+            local z2 = safe_index(streams.curr.z, 2)
+            local z3 = safe_index(streams.curr.z, 3)
+
+            self._vm_debug_once = true
+        end
+
+        if prev then
+            local prev_data_stream = buffer.get_stream(prev, hash("data"))
+            if prev_data_stream then
+                local prev_count = #prev_data_stream / 8
+                streams.prev = {
+                    id = {},
+                    x = {},
+                    y = {},
+                    z = {},
+                    vx = {},
+                    vy = {},
+                    ang = {},
+                    flags = {},
+                }
+                
+                -- Extract prev data
+                for i = 1, prev_count do
+                    local base = (i - 1) * 8
+                    streams.prev.id[i] = math.floor(prev_data_stream[base + 1])
+                    streams.prev.x[i] = prev_data_stream[base + 2]
+                    streams.prev.y[i] = prev_data_stream[base + 3]
+                    streams.prev.z[i] = prev_data_stream[base + 4]
+                    streams.prev.vx[i] = prev_data_stream[base + 5]
+                    streams.prev.vy[i] = prev_data_stream[base + 6]
+                    streams.prev.ang[i] = prev_data_stream[base + 7]
+                    streams.prev.flags[i] = math.floor(prev_data_stream[base + 8])
+                end
+            end
+        end
+
+        -- Delegate to the module to update visuals
+        if visual_manager.on_snapshot_tick then
+            visual_manager.on_snapshot_tick(streams, alpha, sim)
+        end
+    elseif message_id == hash("bus_spawn") then
+        -- Optional immediate handling (module may ignore)
+        if visual_manager.on_spawn then visual_manager.on_spawn(message) end
+    elseif message_id == hash("bus_despawn") then
+        if visual_manager.on_despawn then visual_manager.on_despawn(message) end
+    elseif message_id == hash("bus_event") then
+        if visual_manager.on_event then visual_manager.on_event(message) end
+    end
+end
+
+function final(self)
+    bus.unsubscribe(msg.url())
+    if visual_manager.cleanup then visual_manager.cleanup() end
+end
+
+

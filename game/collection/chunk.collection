@@ -1,0 +1,18 @@
+name: "chunk"
+scale_along_z: 0
+embedded_instances {
+  id: "tilemap"
+  data: "components {\n"
+  "  id: \"chunk\"\n"
+  "  component: \"/asset/tilemap/chunk.tilemap\"\n"
+  "}\n"
+  "components {\n"
+  "  id: \"chunk1\"\n"
+  "  component: \"/game/scripts/chunk.script\"\n"
+  "}\n"
+  ""
+}
+embedded_instances {
+  id: "entity_factory"
+  data: ""
+}

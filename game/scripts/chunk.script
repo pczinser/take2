@@ -1,0 +1,20 @@
+-- Attached to tilemap game object in chunk.collection
+local world = require("game.scripts.module.world.world")
+
+local chunk = {}
+
+function init(self)
+    -- Initialize chunk data
+    self.chunk_data = nil
+end
+
+function on_message(self, message_id, message, sender)
+    if message_id == hash("set_chunk_data") then
+        -- Store chunk data
+        self.chunk_data = message
+        
+        -- Position the chunk in world
+        local world_x, world_y = world.get_chunk_world_position(message.chunk_x, message.chunk_y)
+        go.set_position(vmath.vector3(world_x, world_y, 0), go.get_id())
+    end
+end

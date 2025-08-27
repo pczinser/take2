@@ -1,0 +1,140 @@
+---
+alwaysApply: true
+---
+# Cursor Rules for Defold Game Engine Project with C++ Native Extension
+
+## Project Architecture Overview
+This is a Defold game engine project with a C++ native extension that implements a simulation-driven architecture:
+- Lua side ingests prototypes via composition and manages visualization/input
+- C++ simulation processes commands and generates snapshots
+- Lua managers read from simulation snapshots and enqueue commands
+- All state mutations go through command queue, all reads come from snapshots
+
+## Core Architectural Principles
+
+### 1. Simulation-First Architecture
+- **All state mutations must go through the command queue**: Use `game/scripts/command_queue.lua` for all simulation state changes
+- **Never directly mutate simulation state from Lua**: No direct calls to `sim.cmd_*` outside of command_queue.lua
+- **Read-only access via snapshots**: Managers must subscribe to `sim_bus` and use `bus.get_snapshots()` to read simulation state
+- **Double-buffered snapshot system**: Simulation generates `prev` and `curr` snapshots with streams: `id, x, y, z, vx, vy, ang, flags`
+
+### 2. Terminology Standards
+- **Use "prototype" exclusively**: Never use "archetype" - this is standardized across the entire codebase
+- **C++ ECS uses "System"**: e.g., InventorySystem, PortalSystem
+- **Lua orchestration uses "Manager"**: e.g., visual_manager, world_manager
+- **Shared hub is "Bus"**: sim_bus for snapshot distribution
+
+### 3. File Organization Patterns
+- **Logic in modules**: Keep business logic in `.lua` modules (e.g., `visual_manager.lua`)
+- **Lifecycle in scripts**: Keep Defold lifecycle in matching `.script` files (e.g., `visual_manager.script`)
+- **Prototypes centralized**: All entity prototypes defined in `game/scripts/module/entity/entity_loader.lua`
+
+## Coding Standards
+
+### 4. Lua Code Patterns
+```lua
+-- DO: Use command queue for mutations
+local cmd = require("game.scripts.command_queue")
+cmd.spawn_entity("player", 0, 0, 0)
+cmd.move_entity(entity_id, dx, dy)
+
+-- DO: Subscribe to bus for snapshot access
+local bus = require("game.scripts.sim_bus")
+function on_message(self, id)
+  if id == hash("bus_tick") then
+    local prev, curr, alpha, tick = bus.get_snapshots()
+    -- process snapshot data...
+  end
+end
+
+-- DON'T: Direct simulation calls
+-- sim.cmd_spawn_entity(...)  -- WRONG
+-- sim.read_snapshots()       -- WRONG (managers should use bus)
+```
+
+### 5. Manager Pattern Requirements
+- **Subscribe to sim_bus**: All managers must subscribe with `bus.subscribe(msg.url())`
+- **Handle bus_tick messages**: Process snapshots on each tick notification
+- **Extract streams properly**: Use `buffer.get_stream(buffer, hash("stream_name"))`
+- **Validate data**: Check for finite numbers and valid entity IDs before processing
+
+### 6. Prototype Definition Standards
+```lua
+-- DO: Define prototypes with components structure
+local entity_prototypes = {
+    player = {
+        components = {
+            metadata = { display_name = "Player", category = "player" },
+            transform = { move_speed = 3.0, width = 1, height = 1 },
+            visual = {
+                atlas_path = "/asset/atlas/player.atlas",
+                layer = 1,
+                animations = { /* animation definitions */ }
+            }
+        }
+    }
+}
+```
+
+### 7. C++ Extension Integration
+- **Minimal Lua API**: C++ exposes only essential functions for commands and snapshot reading
+- **Deterministic processing**: All commands processed at start of tick in C++
+- **Observer management**: Use `cmd.observer_follow_entity()` for camera following
+- **Component-based**: Entities are pure data, behavior in components
+
+## Specific Rules
+
+### 8. Position and Transform Data
+- **All position data from simulation**: Never manually set positions in Lua modules
+- **Use transform component**: Position and floor data must come from simulation's transform component
+- **Validate coordinates**: Check for finite numbers and non-subnormal values before using
+
+### 9. Message Passing
+- **No userdata in messages**: Never send buffers or complex objects through Defold messages
+- **Plain table payloads**: Use simple tables for message data when needed
+- **Bus notification pattern**: Use `bus_tick`, `bus_spawn`, `bus_despawn` for lifecycle events
+
+### 10. Performance Considerations
+- **Single snapshot read per tick**: Bus reads snapshots once, managers share the data
+- **Chunk-based rendering**: Use spatial chunking for performance (world_manager pattern)
+- **Cache prototype configs**: Visual manager caches prototype visual configurations
+
+### 11. Error Handling
+- **Validate entity existence**: Check `sim.get_entity(id)` before operations
+- **Safe number validation**: Use `is_finite_number()` and `is_subnormal()` checks
+- **Graceful degradation**: Handle missing prototypes or components gracefully
+
+### 12. Debugging and Development
+- **Use sim_bus debug output**: Check tick counts and entity counts in bus debug
+- **Prototype registration logging**: Verify prototypes are registered correctly
+- **Component presence validation**: Check component existence in C++ debug output
+
+## File-Specific Guidelines
+
+### 13. Key Files and Their Roles
+- `game/scripts/command_queue.lua`: **ONLY** place for simulation mutations
+- `game/scripts/sim_bus.lua`: **ONLY** place for snapshot reading and distribution
+- `game/scripts/visual_manager.lua`: Entity visual lifecycle and animation
+- `game/scripts/module/entity/entity_loader.lua`: **ONLY** place for prototype definitions
+- `extensions/sim/src/`: C++ simulation core (minimal Lua bindings)
+
+### 14. When Adding New Features
+- **New commands**: Add to `command_queue.lua` with proper validation
+- **New managers**: Follow subscription pattern and snapshot processing
+- **New prototypes**: Add to `entity_loader.lua` with component structure
+- **New C++ systems**: Keep Lua API minimal, expose only necessary functions
+
+## Anti-Patterns to Avoid
+- ❌ Direct `sim.cmd_*` calls outside command_queue.lua
+- ❌ Manual position setting in Lua modules
+- ❌ Using "archetype" terminology
+- ❌ Sending buffers through Defold messages
+- ❌ Calling `sim.read_snapshots()` from managers
+- ❌ Defining prototypes outside entity_loader.lua
+- ❌ Mixing logic and lifecycle in same file
+
+## Migration Guidelines
+- Replace any "archetype" references with "prototype"
+- Move direct sim calls to command_queue.lua
+- Ensure managers subscribe to sim_bus
+- Validate all position data comes from simulation

@@ -1,0 +1,2 @@
+go.property("player", resource.atlas("/asset/atlas/player.atlas"))
+go.property("building", resource.atlas("/asset/atlas/building.atlas"))

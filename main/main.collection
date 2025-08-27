@@ -1,4 +1,36 @@
 name: "main"
+instances {
+  id: "camera"
+  prototype: "/orthographic/camera.go"
+  component_properties {
+    id: "script"
+    properties {
+      id: "near_z"
+      value: "-100.0"
+      type: PROPERTY_TYPE_NUMBER
+    }
+    properties {
+      id: "far_z"
+      value: "100.0"
+      type: PROPERTY_TYPE_NUMBER
+    }
+    properties {
+      id: "follow"
+      value: "true"
+      type: PROPERTY_TYPE_BOOLEAN
+    }
+    properties {
+      id: "follow_immediately"
+      value: "false"
+      type: PROPERTY_TYPE_BOOLEAN
+    }
+    properties {
+      id: "follow_lerp"
+      value: "0.0"
+      type: PROPERTY_TYPE_NUMBER
+    }
+  }
+}
 scale_along_z: 0
 embedded_instances {
   id: "root"
@@ -9,18 +41,53 @@ embedded_instances {
   ""
 }
 embedded_instances {
-  id: "player"
+  id: "world_manager"
   data: "components {\n"
-  "  id: \"player_controller\"\n"
-  "  component: \"/game/scripts/player_controller.script\"\n"
+  "  id: \"world_manager\"\n"
+  "  component: \"/game/scripts/world_manager.script\"\n"
+  "}\n"
+  "embedded_components {\n"
+  "  id: \"chunk_factory\"\n"
+  "  type: \"collectionfactory\"\n"
+  "  data: \"prototype: \\\"/game/collection/chunk.collection\\\"\\n"
+  "load_dynamically: true\\n"
+  "\"\n"
+  "}\n"
+  "embedded_components {\n"
+  "  id: \"collectionproxy\"\n"
+  "  type: \"collectionproxy\"\n"
+  "  data: \"collection: \\\"/game/collection/chunk.collection\\\"\\n"
+  "\"\n"
   "}\n"
   ""
 }
 embedded_instances {
-  id: "debug"
+  id: "sim_manager"
   data: "components {\n"
-  "  id: \"building_test\"\n"
-  "  component: \"/game/scripts/building_test.script\"\n"
+  "  id: \"sim_bus\"\n"
+  "  component: \"/game/scripts/sim_bus.script\"\n"
+  "}\n"
+  ""
+}
+embedded_instances {
+  id: "visual_manager"
+  data: "components {\n"
+  "  id: \"visual_manager\"\n"
+  "  component: \"/game/scripts/visual_manager.script\"\n"
+  "}\n"
+  "embedded_components {\n"
+  "  id: \"entity_factory\"\n"
+  "  type: \"factory\"\n"
+  "  data: \"prototype: \\\"/game/go/entity.go\\\"\\n"
+  "\"\n"
+  "}\n"
+  ""
+}
+embedded_instances {
+  id: "go"
+  data: "components {\n"
+  "  id: \"atlas\"\n"
+  "  component: \"/game/scripts/atlas/atlas.script\"\n"
   "}\n"
   ""
 }

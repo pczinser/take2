@@ -1,164 +1,169 @@
 #include "inventory_system.hpp"
-#include <algorithm>
+#include "../components/component_registry.hpp"
+#include "../items.hpp"
 #include <cstdio>
 
 namespace simcore {
 
-// Inventory data structure (Structure of Arrays for performance)
-struct InventorySoA {
-    std::vector<InventoryType> types;
-    std::vector<int32_t> capacities;
-    std::vector<std::unordered_map<ItemType, int32_t>> items;  // item_type -> count
-    std::vector<bool> active;
-} G;
-
-static int32_t g_next_inventory_id = 1;
-static int32_t g_total_items = 0;
+// Remove this line - it's already in component_registry.cpp
+// components::ComponentManager<components::InventoryComponent> g_inventory_components;
 
 void Inventory_Init() {
-    G = {};
-    g_next_inventory_id = 1;
-    g_total_items = 0;
+    // Register default items
+    Items_RegisterItem(ITEM_STONE, "Stone", 64);
+    Items_RegisterItem(ITEM_IRON, "Iron", 32);
+    Items_RegisterItem(ITEM_WOOD, "Wood", 50);
+    Items_RegisterItem(ITEM_HERBS, "Herbs", 20);
+    Items_RegisterItem(ITEM_MUSHROOMS, "Mushrooms", 10);
+    Items_RegisterItem(ITEM_CRYSTAL, "Crystal", 1);
+    Items_RegisterItem(ITEM_CUT_STONE, "Cut Stone", 16);
+    
+    printf("Inventory system initialized\n");
 }
 
 void Inventory_Clear() {
-    Inventory_Init();
+    // Use the global component manager instead
+    components::g_inventory_components.Clear();
+    printf("Inventory system cleared\n");
 }
 
-InventoryId Inventory_Create(InventoryType type, int32_t capacity) {
-    InventoryId id = g_next_inventory_id++;
-    
-    G.types.push_back(type);
-    G.capacities.push_back(capacity);
-    G.items.push_back({});  // Empty item map
-    G.active.push_back(true);
-    
-    printf("Inventory system: Created inventory %d (type: %d, capacity: %d)\n", 
-           id, (int)type, capacity);
-    
-    return id;
-}
-
-void Inventory_Destroy(InventoryId id) {
-    if(id <= 0 || id >= (InventoryId)G.types.size()) return;
-    
-    // Remove all items from this inventory
-    auto& item_map = G.items[id - 1];
-    for(const auto& [item_type, count] : item_map) {
-        g_total_items -= count;
-    }
-    
-    G.active[id - 1] = false;
-    printf("Inventory system: Destroyed inventory %d\n", id);
-}
-
-bool Inventory_CanAddItems(InventoryId id, ItemType item, int32_t amount) {
-    if(id <= 0 || id >= (InventoryId)G.types.size() || !G.active[id - 1]) return false;
-    
-    int32_t current_count = Inventory_GetItemCount(id, item);
-    int32_t capacity = G.capacities[id - 1];
-    
-    return (current_count + amount) <= capacity;
-}
-
-bool Inventory_AddItems(InventoryId id, ItemType item, int32_t amount) {
-    if(!Inventory_CanAddItems(id, item, amount)) return false;
-    
-    auto& item_map = G.items[id - 1];
-    item_map[item] += amount;
-    g_total_items += amount;
-    
-    printf("Inventory system: Added %d items (type: %d) to inventory %d\n", 
-           amount, (int)item, id);
-    
-    return true;
-}
-
-bool Inventory_RemoveItems(InventoryId id, ItemType item, int32_t amount) {
-    if(id <= 0 || id >= (InventoryId)G.types.size() || !G.active[id - 1]) return false;
-    
-    auto& item_map = G.items[id - 1];
-    auto it = item_map.find(item);
-    if(it == item_map.end() || it->second < amount) return false;
-    
-    it->second -= amount;
-    g_total_items -= amount;
-    
-    // Remove item type if count reaches 0
-    if(it->second <= 0) {
-        item_map.erase(it);
-    }
-    
-    printf("Inventory system: Removed %d items (type: %d) from inventory %d\n", 
-           amount, (int)item, id);
-    
-    return true;
-}
-
-bool Inventory_TransferItems(InventoryId from_id, InventoryId to_id, ItemType item, int32_t amount) {
-    if(!Inventory_RemoveItems(from_id, item, amount)) return false;
-    if(!Inventory_AddItems(to_id, item, amount)) {
-        // Rollback if we can't add to destination
-        Inventory_AddItems(from_id, item, amount);
+// Update all functions to use the global component manager
+bool Inventory_CanAddToSlot(EntityId entity_id, int32_t slot_index, ItemType item, int32_t amount) {
+    auto* inventory = components::g_inventory_components.GetComponent(entity_id);
+    if (!inventory || slot_index >= (int32_t)inventory->slots.size()) {
         return false;
     }
     
-    printf("Inventory system: Transferred %d items (type: %d) from inventory %d to %d\n", 
-           amount, (int)item, from_id, to_id);
+    auto& slot = inventory->slots[slot_index];
+    
+    // Check whitelist
+    if (!slot.whitelist.empty()) {
+        bool allowed = false;
+        for (ItemType allowed_item : slot.whitelist) {
+            if (allowed_item == item) {
+                allowed = true;
+                break;
+            }
+        }
+        if (!allowed) return false;
+    }
+    
+    // Check if slot is empty or has same item
+    if (slot.item_type != ITEM_NONE && slot.item_type != item) {
+        return false;
+    }
+    
+    // Check stack size limit
+    int32_t max_stack = Items_GetMaxStackSize(item);
+    if (slot.quantity + amount > max_stack) {
+        return false;
+    }
     
     return true;
 }
 
-int32_t Inventory_GetItemCount(InventoryId id, ItemType item) {
-    if(id <= 0 || id >= (InventoryId)G.types.size() || !G.active[id - 1]) return 0;
-    
-    const auto& item_map = G.items[id - 1];
-    auto it = item_map.find(item);
-    return it != item_map.end() ? it->second : 0;
-}
-
-bool Inventory_HasItems(InventoryId id, ItemType item, int32_t amount) {
-    return Inventory_GetItemCount(id, item) >= amount;
-}
-
-int32_t Inventory_GetFreeSpace(InventoryId id) {
-    if(id <= 0 || id >= (InventoryId)G.types.size() || !G.active[id - 1]) return 0;
-    
-    int32_t used_space = 0;
-    const auto& item_map = G.items[id - 1];
-    for(const auto& [item_type, count] : item_map) {
-        used_space += count;
+bool Inventory_AddToSlot(EntityId entity_id, int32_t slot_index, ItemType item, int32_t amount) {
+    if (!Inventory_CanAddToSlot(entity_id, slot_index, item, amount)) {
+        return false;
     }
     
-    return G.capacities[id - 1] - used_space;
-}
-
-int32_t Inventory_GetCapacity(InventoryId id) {
-    if(id <= 0 || id >= (InventoryId)G.types.size() || !G.active[id - 1]) return 0;
-    return G.capacities[id - 1];
-}
-
-void Inventory_Step(float dt) {
-    // Currently empty - will be used for time-based inventory operations later
-    // (like item decay, magic evaporation, etc.)
-}
-
-InventoryStats Inventory_GetStats() {
-    int32_t total_inventories = 0;
-    int32_t total_capacity = 0;
+    auto* inventory = components::g_inventory_components.GetComponent(entity_id);
+    auto& slot = inventory->slots[slot_index];
     
-    for(size_t i = 0; i < G.types.size(); ++i) {
-        if(G.active[i]) {
-            total_inventories++;
-            total_capacity += G.capacities[i];
+    if (slot.item_type == ITEM_NONE) {
+        slot.item_type = item;
+        slot.quantity = amount;
+    } else {
+        slot.quantity += amount;
+    }
+    
+    return true;
+}
+
+bool Inventory_RemoveFromSlot(EntityId entity_id, int32_t slot_index, ItemType item, int32_t amount) {
+    auto* inventory = components::g_inventory_components.GetComponent(entity_id);
+    if (!inventory || slot_index >= (int32_t)inventory->slots.size()) {
+        return false;
+    }
+    
+    auto& slot = inventory->slots[slot_index];
+    if (slot.item_type != item || slot.quantity < amount) {
+        return false;
+    }
+    
+    slot.quantity -= amount;
+    if (slot.quantity == 0) {
+        slot.item_type = ITEM_NONE;
+    }
+    
+    return true;
+}
+
+bool Inventory_SwapSlots(EntityId entity_id, int32_t slot_a, int32_t slot_b) {
+    auto* inventory = components::g_inventory_components.GetComponent(entity_id);
+    if (!inventory || slot_a >= (int32_t)inventory->slots.size() || slot_b >= (int32_t)inventory->slots.size()) {
+        return false;
+    }
+    
+    std::swap(inventory->slots[slot_a], inventory->slots[slot_b]);
+    return true;
+}
+
+// Queries
+ItemType Inventory_GetSlotItem(EntityId entity_id, int32_t slot_index) {
+    auto* inventory = components::g_inventory_components.GetComponent(entity_id);
+    if (!inventory || slot_index >= (int32_t)inventory->slots.size()) {
+        return ITEM_NONE;
+    }
+    return inventory->slots[slot_index].item_type;
+}
+
+int32_t Inventory_GetSlotQuantity(EntityId entity_id, int32_t slot_index) {
+    auto* inventory = components::g_inventory_components.GetComponent(entity_id);
+    if (!inventory || slot_index >= (int32_t)inventory->slots.size()) {
+        return 0;
+    }
+    return inventory->slots[slot_index].quantity;
+}
+
+bool Inventory_IsSlotOutput(EntityId entity_id, int32_t slot_index) {
+    auto* inventory = components::g_inventory_components.GetComponent(entity_id);
+    if (!inventory || slot_index >= (int32_t)inventory->slots.size()) {
+        return false;
+    }
+    return inventory->slots[slot_index].is_output;
+}
+
+std::vector<int32_t> Inventory_GetInputSlots(EntityId entity_id) {
+    std::vector<int32_t> result;
+    auto* inventory = components::g_inventory_components.GetComponent(entity_id);
+    if (!inventory) return result;
+    
+    for (int32_t i = 0; i < (int32_t)inventory->slots.size(); i++) {
+        if (!inventory->slots[i].is_output) {
+            result.push_back(i);
         }
     }
+    return result;
+}
+
+std::vector<int32_t> Inventory_GetOutputSlots(EntityId entity_id) {
+    std::vector<int32_t> result;
+    auto* inventory = components::g_inventory_components.GetComponent(entity_id);
+    if (!inventory) return result;
     
-    return {
-        total_inventories,
-        g_total_items,
-        total_capacity
-    };
+    for (int32_t i = 0; i < (int32_t)inventory->slots.size(); i++) {
+        if (inventory->slots[i].is_output) {
+            result.push_back(i);
+        }
+    }
+    return result;
+}
+
+// System update
+void Inventory_Step(float dt) {
+    // Inventory system doesn't need per-frame updates
+    // It's purely data-driven
 }
 
 } // namespace simcore

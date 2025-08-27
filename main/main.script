@@ -1,19 +1,55 @@
+-- Main script - handles game initialization and global systems
+
+local entity_loader = require("game.scripts.module.entity.entity_loader")
+local cmd = require("game.scripts.command_queue")
+local bus = require("game.scripts.sim_bus")
+local sim = require("game.scripts.sim")
+-- Ensure behavior modules are bundled. Defold's packer only includes literal requires.
+-- This avoids dynamic require being stripped in entity adapters.
+local __behavior_player = require("game.scripts.module.entity.behavior.player")
+-- NOTE: Ensure entity behavior modules are bundled. Defold strips modules not statically required.
+-- This import registers available behaviors for dynamic loading by entity.script at runtime.
+
+local SIM_TICK = hash("sim_tick")
+local SIM_SPAWN = hash("sim_spawn")
+local SIM_DESPAWN = hash("sim_despawn")
+local SIM_EVENT = hash("sim_event")
+
 function init(self)
     --msg.post(".", "acquire_input_focus")
     print("Sim Kernel Starter: initializing")
 
     sim.set_rate(60)
-    sim.pause(false)
+    -- Deterministic bootstrap: pause, queue commands, step once, then start
+    sim.pause(true)
 
     -- Spawn three floors at explicit Z (supports negatives for basements)
-    sim.spawn_floor_at_z(-1, 2, 2, 32, 32) -- basement
-    sim.spawn_floor_at_z( 0, 2, 2, 32, 32) -- ground
-    sim.spawn_floor_at_z( 1, 2, 2, 32, 32) -- first floor
+    cmd.spawn_floor_at_z(-1, 2, 2, 32, 32) -- basement
+    cmd.spawn_floor_at_z( 0, 2, 2, 32, 32) -- ground
+    cmd.spawn_floor_at_z( 1, 2, 2, 32, 32) -- first floor
 
-    -- Demo portal: from z=0 (chunk 0,0 tile 0,0) to z=1 (chunk 1,1 tile 31,31)
-    sim.add_portal(0, 0, 0, 0, 0,   1, 1, 1, 31, 31)
+    -- Initialize entity system (only register prototypes)
+    entity_loader.init()
+    
+    -- List available prototypes (for debugging)
+    entity_loader.list_prototypes()
+
+    -- TEST ONLY: spawn player while paused so first live tick already contains it
+    print("TEST: queuing player spawn at (0,0,0) during bootstrap...")
+    cmd.spawn_entity("player", 0, 0, 0)
+    cmd.set_observer_position(0, 0, 0, 0)
+    sim.step_n(1)
+    print("TEST: bootstrap step complete; player should exist in snapshot")
+
+    -- Ensure bus is initialized and register as listener AFTER bootstrap
+    bus.on_init(sim)
+    sim.register_listener(msg.url())
+    print("Main script: registered as sim listener")
 
     self.next_print = 0
+
+    -- Unpause to start normal ticking
+    sim.pause(false)
 end
 
 function update(self, dt)
@@ -23,6 +59,18 @@ function update(self, dt)
     --     pprint(s)
     --     self.next_print = socket.gettime() + 2.0
     -- end
+end
+
+function on_message(self, message_id, message, sender)
+    if message_id == SIM_TICK then
+        bus.on_tick()
+    elseif message_id == SIM_SPAWN then
+        bus.on_spawn(message)
+    elseif message_id == SIM_DESPAWN then
+        bus.on_despawn(message)
+    elseif message_id == SIM_EVENT then
+        bus.on_event(message)
+    end
 end
 
 function on_input(self, action_id, action)

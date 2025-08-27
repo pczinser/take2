@@ -1,0 +1,176 @@
+-- Attached to world_manager game object
+local world = require("game.scripts.module.world.world")
+local bus = require("game.scripts.sim_bus")
+local cmd = require("game.scripts.command_queue")
+local sim = require("game.scripts.sim")
+
+local world_manager = {
+    loaded_chunks = {},  -- Track which chunks are loaded
+    observer_config = nil,
+    initialized = false  -- Track if we have an observer and can start loading chunks
+}
+
+function init(self)
+    print("World manager starting - ensuring observer...")
+    print("World manager game object ID:", go.get_id())
+    -- Ensure a default observer exists so chunk logic can begin before player binds
+    cmd.set_observer_position(0, 0, 0, 0)
+    
+    -- Subscribe to bus for ticks with our URL
+    print("World manager subscribing to sim_bus...")
+    bus.subscribe_world(msg.url())
+    print("World manager subscribed to sim_bus")
+end
+
+function update(self, dt)
+    -- No per-frame work; reacts on ticks via bus
+end
+
+function on_message(self, message_id, message, sender)
+    if message_id == hash("bus_tick") then
+        -- Check if we have an observer yet
+        if not world_manager.initialized then
+            world_manager.observer_config = world.get_observer_config()
+            if world_manager.observer_config then
+                print("World manager initialized - Hot radius: " .. world_manager.observer_config.hot_chunk_radius .. " chunks")
+                world_manager.initialized = true
+            else
+                return
+            end
+        end
+        -- Boot debug: print hot chunk count first 8 ticks
+        self._debug_ticks = (self._debug_ticks or 0)
+        if self._debug_ticks < 8 then
+            local vc = world.get_visual_chunks(0)
+
+            self._debug_ticks = self._debug_ticks + 1
+        end
+        load_active_chunks()
+    elseif message_id == hash("bus_spawn") then
+        -- Optional: handle immediate spawn events
+    elseif message_id == hash("bus_despawn") then
+        -- Optional: handle immediate despawn events
+    elseif message_id == hash("bus_event") then
+        -- Optional: handle immediate events
+    end
+end
+
+-- Only spawn visual chunks for hot chunks
+function load_active_chunks()
+    local observers = sim.get_observers()
+    if #observers == 0 then return end
+    local floor_z = observers[1].z
+
+    local visual_chunks = world.get_visual_chunks(floor_z)
+
+    local should_load_chunks = {}
+    for _, chunk_data in ipairs(visual_chunks) do
+        local chunk_key = string.format("%d_%d_%d", chunk_data.floor_z, chunk_data.chunk_x, chunk_data.chunk_y)
+        should_load_chunks[chunk_key] = true
+    end
+
+    for chunk_key, _ in pairs(world_manager.loaded_chunks) do
+        if not should_load_chunks[chunk_key] then
+            unload_chunk(chunk_key)
+        end
+    end
+
+    for _, chunk_data in ipairs(visual_chunks) do
+        local chunk_key = string.format("%d_%d_%d", chunk_data.floor_z, chunk_data.chunk_x, chunk_data.chunk_y)
+        if not world_manager.loaded_chunks[chunk_key] then
+            local chunk_ids = collectionfactory.create("#chunk_factory")
+            local tilemap_id = chunk_ids[hash("/tilemap")] or chunk_ids[hash("tilemap")]
+            if tilemap_id then
+                local collection_root_id = get_collection_root_id(tilemap_id)
+                if collection_root_id then
+                    msg.post(tilemap_id, "set_chunk_data", {
+                        floor_z = chunk_data.floor_z,
+                        chunk_x = chunk_data.chunk_x,
+                        chunk_y = chunk_data.chunk_y
+                    })
+                    world_manager.loaded_chunks[chunk_key] = {
+                        collection_ids = chunk_ids,
+                        tilemap_id = tilemap_id,
+                        collection_root_id = collection_root_id
+                    }
+                else
+                    print("ERROR: Failed to get collection root ID for chunk", chunk_key)
+                    -- Clean up the spawned collection since we can't track it
+                    for _, id in pairs(chunk_ids) do
+                        pcall(go.delete, id, true)
+                    end
+                end
+            else
+                print("ERROR: Could not find tilemap in spawned chunk collection for", chunk_key)
+                -- Clean up the spawned collection since we can't use it
+                for _, id in pairs(chunk_ids) do
+                    pcall(go.delete, id, true)
+                end
+            end
+        end
+    end
+end
+
+function unload_chunk(chunk_key)
+    local chunk_data = world_manager.loaded_chunks[chunk_key]
+    if chunk_data then
+        -- Delete the collection using the collection_ids table (as per Defold docs)
+        if chunk_data.collection_ids then
+            pcall(go.delete, chunk_data.collection_ids, true)
+        end
+        
+        world_manager.loaded_chunks[chunk_key] = nil
+    else
+        world_manager.loaded_chunks[chunk_key] = nil
+    end
+end
+
+-- Helper function to get collection root ID from tilemap ID
+function get_collection_root_id(tilemap_id)
+    local tilemap_path = tostring(tilemap_id)
+    
+    -- Extract collection name from path like "/collection0/tilemap"
+    local collection_name = string.match(tilemap_path, "/([^/]+)/")
+    if collection_name then
+        return hash("/" .. collection_name)
+    end
+    
+    -- Fallback: try to use the tilemap_id directly if it's a collection root
+    if tilemap_path:match("^/[^/]+$") then
+        return tilemap_id
+    end
+    
+    print("WARNING: Could not extract collection root ID from tilemap path:", tilemap_path)
+    return nil
+end
+
+function final(self)
+    bus.unsubscribe(msg.url())
+end
+
+function fixed_update(self, dt)
+    -- This function is called if 'Fixed Update Frequency' is enabled in the Engine section of game.project
+    -- Can be coupled with fixed updates of the physics simulation if 'Use Fixed Timestep' is enabled in
+    -- Physics section of game.project
+    -- Add update code here
+    -- Learn more: https://defold.com/manuals/script/
+    -- Remove this function if not needed
+end
+
+function on_input(self, action_id, action)
+    -- Add input-handling code here. The game object this script is attached to
+    -- must have acquired input focus:
+    --
+    --    msg.post(".", "acquire_input_focus")
+    --
+    -- All mapped input bindings will be received. Mouse and touch input will
+    -- be received regardless of where on the screen it happened.
+    -- Learn more: https://defold.com/manuals/input/
+    -- Remove this function if not needed
+end
+
+function on_reload(self)
+    -- Add reload-handling code here
+    -- Learn more: https://defold.com/manuals/hot-reload/
+    -- Remove this function if not needed
+end
