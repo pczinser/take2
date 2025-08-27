@@ -9,14 +9,12 @@ go.property("entity_id", 0)
 local function safe_require(path)
 	local ok, mod = pcall(require, path)
 	if ok then return mod end
-	print("ENTITY ADAPTER: failed to require:", path, " error:", tostring(mod))
 	return nil
 end
 
 local function load_behavior_for_prototype(self, prototype_name)
 	if not prototype_name or prototype_name == "" then return end
 	local path = string.format("game.scripts.module.entity.behavior.%s", prototype_name)
-	print("ENTITY ADAPTER:", go.get_id(), "loading behavior:", path, " for entity_id=", tostring(self.entity_id))
 	self.behavior = safe_require(path)
 	if self.behavior and self.behavior.init then
 		self.behavior.init(self)
@@ -40,7 +38,7 @@ local function bind_from_entity_id(self, id, prototype_name)
 		prototype_name = ent and ent.prototype_name or nil
 	end
 	self.prototype = prototype_name
-	print("ENTITY ADAPTER:", go.get_id(), "bind entity id=", tostring(id), " proto=", tostring(prototype_name))
+
 	load_behavior_for_prototype(self, prototype_name)
 end
 
@@ -49,9 +47,10 @@ function init(self)
 	self.prototype = nil
 	self.behavior = nil
 	self._has_input_focus = false
-	print("ENTITY ADAPTER:", go.get_id(), "init entity_id property=", tostring(self.entity_id))
+
 	if self.entity_id then
 		bind_from_entity_id(self, self.entity_id, nil)
+		-- Atlas setting is now handled by visual_manager.attach()
 	end
 end
 
@@ -60,6 +59,7 @@ function on_message(self, message_id, message, sender)
 		if message and message.entity_id then
 			bind_from_entity_id(self, message.entity_id, message.prototype)
 		end
+
 	elseif self.behavior and self.behavior.on_message then
 		self.behavior.on_message(self, message_id, message, sender)
 	end

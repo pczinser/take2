@@ -11,6 +11,7 @@ local visual_manager = {
 local world = require("game.scripts.module.world.world")
 local sim = require("game.scripts.sim")
 local bus = require("game.scripts.sim_bus")
+local atlas_registry = require("game.scripts.atlas.atlas_registry")
 
 -- Local helpers
 local function determine_animation(visual_config, entity_state)
@@ -82,14 +83,26 @@ function visual_manager.get_prototype_config(prototype)
 end
 
 function visual_manager.attach(entity_id, visual_config, position)
+	print("VISUAL: Attaching entity", entity_id, "with config:", visual_config and visual_config.atlas_path or "nil")
+	if visual_config and visual_config.atlas_path then
+		print("VISUAL DEBUG: atlas_path type =", type(visual_config.atlas_path))
+		print("VISUAL DEBUG: atlas_path value =", visual_config.atlas_path)
+	end
 	local go_id = factory.create(visual_manager.factory_url, position, nil, { entity_id = entity_id })
 	if not go_id then return end
 	go.set_position(position, go_id)
 	local sprite_url = msg.url(nil, go_id, "sprite")
-	-- Ensure sprite texture matches visual atlas
+	
+	-- Set the atlas using the registry
 	if visual_config and visual_config.atlas_path then
-		pcall(msg.post, sprite_url, "set_texture", { texture = hash(visual_config.atlas_path) })
+		local success = atlas_registry.set_atlas(sprite_url, visual_config.atlas_path)
+		if success then
+			print("VISUAL: Set atlas", visual_config.atlas_path, "for entity", entity_id)
+		else
+			print("VISUAL ERROR: Failed to set atlas", visual_config.atlas_path, "for entity", entity_id)
+		end
 	end
+	
 	local pos = go.get_position(go_id)
 	pos.z = visual_config.layer or 1
 	go.set_position(pos, go_id)
@@ -103,6 +116,8 @@ function visual_manager.attach(entity_id, visual_config, position)
 		missed = 0
 	}
 	visual_manager.by_url[go_id] = entity_id
+	
+	-- Initial animation setting is now handled by behavior modules
 end
 
 function visual_manager.detach(entity_id)

@@ -1,1 +1,8 @@
+animations {
+  id: "obelisk"
+  images {
+    image: "/asset/img/proto_obelisk.png"
+  }
+  playback: PLAYBACK_NONE
+}
 extrude_borders: 2
