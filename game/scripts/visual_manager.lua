@@ -132,8 +132,24 @@ function visual_manager.update_from_snapshot(entity_id, snapshot_data)
 	local entity_data = visual_manager.by_entity[entity_id]
 	if not entity_data then return end
 	local current_pos = go.get_position(entity_data.go)
-	local target_pos = vmath.vector3(snapshot_data.x, snapshot_data.y, current_pos.z)
+	
+	-- Get entity transform to adjust positioning for multi-tile buildings
+	local transform = sim.get_entity_transform and sim.get_entity_transform(entity_id)
+	local visual_x, visual_y = snapshot_data.x, snapshot_data.y
+	
+	if transform and (transform.width > 1 or transform.height > 1) then
+		-- For multi-tile buildings, center the sprite
+		visual_x = snapshot_data.x + (transform.width * 64.0 / 2.0) - 32.0
+		visual_y = snapshot_data.y + (transform.height * 64.0 / 2.0) - 32.0
+	end
+	
+	local target_pos = vmath.vector3(visual_x, visual_y, current_pos.z)
 	go.set_position(target_pos, entity_data.go)
+	
+	-- Debug: log visual positioning for multi-tile entities
+	if entity_id == 2 or entity_id == 3 then  -- Log for extractor and statue
+		print("VISUAL UPDATE: Entity", entity_id, "base (", snapshot_data.x, ",", snapshot_data.y, ") visual (", visual_x, ",", visual_y, ")")
+	end
 	
 	-- Get animation state directly from the new system
 	local entity_state = sim.get_entity_animation_state(entity_id) or {}
@@ -210,7 +226,24 @@ function visual_manager.on_snapshot_tick(streams, alpha, sim_api)
 						cfg = visual_manager.get_prototype_config(proto)
 					end
 					if cfg then
-						visual_manager.attach(id, cfg, vmath.vector3(wx, wy, cfg.layer or 1))
+						-- Convert world coordinates back to grid coordinates for consistent positioning
+						local grid_x = wx / 64.0
+						local grid_y = wy / 64.0
+						
+						-- Get entity transform to adjust positioning for multi-tile buildings
+						local transform = (sim_api or sim).get_entity_transform and (sim_api or sim).get_entity_transform(id)
+						local visual_x, visual_y = wx, wy
+						
+						if transform and (transform.width > 1 or transform.height > 1) then
+							-- For multi-tile buildings, center the sprite
+							visual_x = wx + (transform.width * 64.0 / 2.0) - 32.0
+							visual_y = wy + (transform.height * 64.0 / 2.0) - 32.0
+							print("VISUAL DEBUG: Multi-tile entity", id, "base (", wx, ",", wy, ") centered at (", visual_x, ",", visual_y, ")")
+						else
+							print("VISUAL DEBUG: Single-tile entity", id, "grid coords (", grid_x, ",", grid_y, ") world coords (", wx, ",", wy, ")")
+						end
+						
+						visual_manager.attach(id, cfg, vmath.vector3(visual_x, visual_y, cfg.layer or 1))
 					end
 				end
 				-- Update attached visuals

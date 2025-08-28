@@ -164,6 +164,27 @@ function M.on_input(self, action_id, action)
 			cmd.spawn_entity("decorative_statue", grid_x + dx, grid_y + dy, t.floor_z or 0)
 		end
 		return true
+	elseif action_id == hash("key_2") and action.pressed then
+		-- Spawn extractor adjacent to player's facing (accounting for 3x3 size)
+		local t = sim.get_entity_transform and sim.get_entity_transform(self.entity_id)
+		if t then
+			local dx, dy = 0, 0
+			local f = t.facing or "south"
+			if f == "east" then
+				dx = 2  -- Place 2 tiles away to avoid overlap
+			elseif f == "west" then
+				dx = -3  -- Place 3 tiles away (building is 3 wide)
+			elseif f == "north" then
+				dy = 2  -- Place 2 tiles away to avoid overlap
+			else
+				dy = -3  -- Place 3 tiles away (building is 3 tall)
+			end
+			-- Convert to integer grid coordinates
+			local grid_x = math.floor(t.grid_x or 0)
+			local grid_y = math.floor(t.grid_y or 0)
+			cmd.spawn_entity("extractor", grid_x + dx, grid_y + dy, t.floor_z or 0)
+		end
+		return true
 	end
 	return false
 end

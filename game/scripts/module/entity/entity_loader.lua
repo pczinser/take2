@@ -98,16 +98,16 @@ local entity_prototypes = {
         }
     },
     
-    stone_extractor = {
+    extractor = {
         components = {
             metadata = {
-                display_name = "Stone Extractor",
+                display_name = "Extractor",
                 category = "building"
             },
             transform = {
                 move_speed = 0.0,
-                width = 2,
-                height = 2
+                width = 3,
+                height = 3
             },
             production = {
                 extraction_rate = 1.0,
@@ -120,6 +120,13 @@ local entity_prototypes = {
             inventory = {
                 slots = {
                     { is_output = true, whitelist = {1} }  -- Output slot for stone
+                }
+            },
+            visual = {
+                atlas_path = "/asset/atlas/building.atlas",
+                layer = 1,
+                animations = {
+                    extractor = {}
                 }
             }
         }

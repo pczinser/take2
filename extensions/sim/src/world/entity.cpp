@@ -468,15 +468,20 @@ std::vector<EntityId> GetEntitiesAtTile(int32_t floor_z, int32_t tile_x, int32_t
         return result;  // No entities in this chunk
     }
     
-    // Check each entity in the chunk for exact tile match
+    // Check each entity in the chunk for tile occupation
     for (EntityId entity_id : chunk_it->second) {
         components::TransformComponent* transform = components::g_transform_components.GetComponent(entity_id);
         if (transform) {
-            // Check if entity is at this exact tile
-            int32_t entity_tile_x = (int32_t)transform->grid_x;
-            int32_t entity_tile_y = (int32_t)transform->grid_y;
+            // Check if entity's footprint includes this tile
+            int32_t entity_base_x = (int32_t)transform->grid_x;
+            int32_t entity_base_y = (int32_t)transform->grid_y;
+            int32_t entity_end_x = entity_base_x + transform->width - 1;
+            int32_t entity_end_y = entity_base_y + transform->height - 1;
             
-            if (entity_tile_x == tile_x && entity_tile_y == tile_y) {
+            if (tile_x >= entity_base_x && tile_x <= entity_end_x &&
+                tile_y >= entity_base_y && tile_y <= entity_end_y) {
+                printf("COLLISION: Entity %d (%.1f,%.1f) %dx%d occupies tile (%d,%d)\n", 
+                       entity_id, transform->grid_x, transform->grid_y, transform->width, transform->height, tile_x, tile_y);
                 result.push_back(entity_id);
             }
         }

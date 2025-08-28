@@ -5,4 +5,11 @@ animations {
   }
   playback: PLAYBACK_NONE
 }
+animations {
+  id: "extractor"
+  images {
+    image: "/asset/img/proto_extractor.png"
+  }
+  playback: PLAYBACK_LOOP_FORWARD
+}
 extrude_borders: 2
