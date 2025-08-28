@@ -91,3 +91,11 @@ embedded_instances {
   "}\n"
   ""
 }
+embedded_instances {
+  id: "debug"
+  data: "components {\n"
+  "  id: \"debug\"\n"
+  "  component: \"/game/gui/debug.gui\"\n"
+  "}\n"
+  ""
+}

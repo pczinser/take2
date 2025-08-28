@@ -1,0 +1,88 @@
+-- Debug GUI script for displaying simulation statistics
+local bus = require("game.scripts.sim_bus")
+local sim = require("game.scripts.sim")
+local visual_manager = require("game.scripts.visual_manager")
+
+-- FPS tracking variables
+local frame_count = 0
+local last_time = 0
+local fps = 0
+
+function init(self)
+	-- Subscribe to bus for snapshot updates
+	bus.subscribe(msg.url())
+	print("Debug GUI initialized")
+end
+
+function update(self, dt)
+	-- Calculate FPS
+	frame_count = frame_count + 1
+	local current_time = socket.gettime()
+	
+	if current_time - last_time >= 1.0 then
+		fps = frame_count / (current_time - last_time)
+		frame_count = 0
+		last_time = current_time
+		
+		-- Update FPS display
+		gui.set_text(gui.get_node("fps"), string.format("FPS: %.1f", fps))
+	end
+end
+
+function on_message(self, message_id, message, sender)
+	if message_id == hash("bus_tick") then
+		-- Get snapshot data
+		local prev, curr, alpha, tick = bus.get_snapshots()
+		
+		local total_entities = 0
+		local floor_entities = 0
+		local observer_floor = 0
+		
+		if curr then
+			local data_stream = buffer.get_stream(curr, hash("data"))
+			if data_stream then
+				total_entities = #data_stream / 8
+				
+				-- Get observer position
+				local observers = sim.get_observers()
+				if #observers > 0 then
+					local observer = observers[1]
+					observer_floor = observer.z or 0
+					
+					-- Count entities on same floor
+					for i = 1, total_entities do
+						local base = (i - 1) * 8
+						local z = data_stream[base + 4]  -- Z coordinate (floor)
+						if z and z == observer_floor then
+							floor_entities = floor_entities + 1
+						end
+					end
+				end
+			end
+		end
+		
+		-- Count visible entities
+		local visible_entities = 0
+		if visual_manager.by_entity then
+			for entity_id, _ in pairs(visual_manager.by_entity) do
+				visible_entities = visible_entities + 1
+			end
+		end
+		
+		-- Update GUI text nodes
+		gui.set_text(gui.get_node("total_entities"), "Total: " .. total_entities)
+		gui.set_text(gui.get_node("floor_entities"), "Floor: " .. floor_entities)
+		gui.set_text(gui.get_node("visible_entities"), "Visible: " .. visible_entities)
+		
+		-- Update observer position
+		local observers = sim.get_observers()
+		if #observers > 0 then
+			local observer = observers[1]
+			local pos_text = string.format("Observer: (%.1f, %.1f, %d)", 
+				observer.x or 0, observer.y or 0, observer.z or 0)
+			gui.set_text(gui.get_node("observer_pos"), pos_text)
+		else
+			gui.set_text(gui.get_node("observer_pos"), "Observer: (0.0, 0.0, 0)")
+		end
+	end
+end

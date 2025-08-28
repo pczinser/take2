@@ -1,0 +1,67 @@
+script: "/game/gui/debug.gui_script"
+fonts {
+  name: "default"
+  font: "/builtins/fonts/default.font"
+}
+nodes {
+  position {
+    x: 860.0
+    y: 590.0
+  }
+  size {
+    x: 200.0
+    y: 100.0
+  }
+  type: TYPE_TEXT
+  text: "<text>"
+  font: "default"
+  id: "total_entities"
+  inherit_alpha: true
+}
+nodes {
+  position {
+    x: 860.0
+    y: 491.0
+  }
+  size {
+    x: 200.0
+    y: 100.0
+  }
+  type: TYPE_TEXT
+  text: "<text>"
+  font: "default"
+  id: "floor_entities"
+  inherit_alpha: true
+}
+nodes {
+  position {
+    x: 860.0
+    y: 391.0
+  }
+  size {
+    x: 200.0
+    y: 100.0
+  }
+  type: TYPE_TEXT
+  text: "<text>"
+  font: "default"
+  id: "visible_entities"
+  inherit_alpha: true
+}
+nodes {
+  position {
+    x: 860.0
+    y: 290.0
+  }
+  size {
+    x: 200.0
+    y: 100.0
+  }
+  type: TYPE_TEXT
+  text: "<text>"
+  font: "default"
+  id: "observer_pos"
+  inherit_alpha: true
+}
+material: "/builtins/materials/gui.material"
+adjust_reference: ADJUST_REFERENCE_PARENT
